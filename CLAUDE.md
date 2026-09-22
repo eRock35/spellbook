@@ -50,6 +50,31 @@ third, gate it the same way.
 is arithmetic, so it is free to run. Don't "helpfully" make it summarise
 anything with Claude; that would turn a free tick into a billable one.
 
+## Reading is open; everything else is not
+
+`GET /api/prompts` and `GET /api/prompts/:id` take no session. A **shared**
+prompt library that made you register before showing you a single public prompt
+was the one thing on this domain you had to join to look at, and it is not the
+rule the rest of the domain runs — browse anything, pay for a model call. It is
+also what makes the landing page's live preview frame show a library rather
+than a picture of a sign-in form.
+
+The floor that makes it safe: only `visibility === 'public'` is ever returned,
+signed in or not, and `loadVisiblePrompt` 404s (never 403s) on someone else's
+private prompt — a signed-out caller owns nothing, so it is the public shelf or
+a 404. Everything that **writes** still needs a session: publish, edit, delete,
+vote, save, the copy counter. The two model calls need the shared account and a
+budget on top of that.
+
+`test/public-browse.test.js` asserts both halves — the open reads and every one
+of the closed writes — because a mistake here would not look like an error, it
+would look like the app working.
+
+On the page: `needsAccount()` is the single guard every action goes through, so
+a new one cannot forget it, and a `401` is only treated as an expired session
+when the page believed it had one. Throwing a guest out of the page they are
+reading because they tapped an upvote is the behaviour this replaced.
+
 ## Confirm-before-save is deliberate
 
 Both AI routes return a **proposal** and write nothing. The frontend renders it

@@ -241,7 +241,17 @@ async function loadVisiblePrompt(req, res, { mustOwn } = {}) {
 }
 
 // --- browse ----------------------------------------------------------------
-app.get('/api/prompts', requireLogin, async (req, res) => {
+// Browsing is open. A shared prompt library that demands an account before it
+// will show you a single public prompt is a worse product and a worse pitch -
+// and it is the rule the rest of this domain already runs: browse anything,
+// pay for a model call. It is also what makes the live preview on the landing
+// page show a library rather than a sign-in form.
+//
+// Only `visibility === 'public'` is ever returned here, signed in or not, so
+// nothing private is reachable by dropping the cookie. Everything that WRITES
+// - publish, vote, save, remix, improve - still needs a session, and the two
+// model calls still need the shared account and a budget on top.
+app.get('/api/prompts', async (req, res) => {
   try {
     const sortField = SORTS[String(req.query.sort || 'trending')] || SORTS.trending;
     const snap = await prompts()
@@ -270,10 +280,13 @@ app.get('/api/prompts', requireLogin, async (req, res) => {
 
     // Which of these has the caller already voted on or saved? Sent with the
     // list so the UI can render its own state in one round trip instead of N.
+    // A signed-out reader has neither, and asking costs two fan-out reads per
+    // page load to learn nothing.
+    const uid = req.user && req.user.uid;
     const ids = rows.slice(0, 60).map((p) => p.id);
     const [myVotes, mySaves] = await Promise.all([
-      ids.length ? db.getAll(...ids.map((id) => prompts().doc(id).collection('votes').doc(req.user.uid))) : [],
-      ids.length ? db.getAll(...ids.map((id) => db.collection('users').doc(req.user.uid).collection('saves').doc(id))) : [],
+      uid && ids.length ? db.getAll(...ids.map((id) => prompts().doc(id).collection('votes').doc(uid))) : [],
+      uid && ids.length ? db.getAll(...ids.map((id) => db.collection('users').doc(uid).collection('saves').doc(id))) : [],
     ]);
     const voteBy = {};
     myVotes.forEach((d, i) => { if (d.exists) voteBy[ids[i]] = d.data().value; });
@@ -287,6 +300,9 @@ app.get('/api/prompts', requireLogin, async (req, res) => {
         myVote: voteBy[p.id] || 0,
         saved: !!savedBy[p.id],
       })),
+      // So the page knows whether to draw the library's controls or an
+      // invitation to sign in, without a second round trip.
+      signedIn: !!uid,
       facets: { platforms: PLATFORMS, categories: CATEGORIES },
     });
   } catch (err) {
@@ -328,13 +344,18 @@ app.get('/api/my/prompts', requireLogin, async (req, res) => {
   }
 });
 
-app.get('/api/prompts/:id', requireLogin, async (req, res) => {
+// Open for the same reason the list is, and with the same floor:
+// loadVisiblePrompt only returns a private prompt to the person who owns it,
+// and a signed-out caller owns nothing - so this is the public shelf or a 404,
+// never someone else's draft.
+app.get('/api/prompts/:id', async (req, res) => {
   const found = await loadVisiblePrompt(req, res);
   if (!found) return;
   try {
+    const uid = req.user && req.user.uid;
     const [vote, save] = await Promise.all([
-      found.ref.collection('votes').doc(req.user.uid).get(),
-      db.collection('users').doc(req.user.uid).collection('saves').doc(req.params.id).get(),
+      uid ? found.ref.collection('votes').doc(uid).get() : { exists: false },
+      uid ? db.collection('users').doc(uid).collection('saves').doc(req.params.id).get() : { exists: false },
     ]);
     // Fire-and-forget: a view counter is not worth failing a read over, and
     // awaiting it puts a write in the latency path of every page open.
@@ -342,7 +363,7 @@ app.get('/api/prompts/:id', requireLogin, async (req, res) => {
     res.json(publicPrompt(found.doc.id, found.data, {
       myVote: vote.exists ? vote.data().value : 0,
       saved: save.exists,
-      isMine: found.data.authorId === req.user.uid,
+      isMine: !!uid && found.data.authorId === uid,
     }));
   } catch (err) {
     console.error('GET /api/prompts/:id', err);

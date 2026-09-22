@@ -211,6 +211,13 @@
     </span>
   </div>
 
+  <!-- The signed-out bar. Browsing is open, so this invites rather than
+       blocks: it says what an account adds, not that one is required. -->
+  <div class="authbar" id="guestbar" hidden>
+    <span class="who">Browsing as a guest</span>
+    <a class="linkbtn" href="/login" style="flex:0 0 auto; text-decoration:none;">Sign in to vote, save or publish</a>
+  </div>
+
   <div class="banner warn" id="aiBanner" hidden></div>
 
   <!-- ============ LIST VIEW ============ -->
@@ -411,12 +418,32 @@
       opts.body = JSON.stringify(opts.body);
     }
     return fetch(path, opts).then(function(r){
-      if (r.status === 401){ window.location.replace('/login'); throw new Error('signed out'); }
+      // A 401 means one of two different things. If we believed we were signed
+      // in, the session went away and the door is the right answer. If we
+      // never were, the reader just tapped something that needs an account,
+      // and throwing them out of the page they are reading is not.
+      if (r.status === 401){
+        if (state.me) { window.location.replace('/login'); throw new Error('signed out'); }
+        throw new Error('Sign in to do that.');
+      }
       return r.json().catch(function(){ return {}; }).then(function(d){
         if (!r.ok) throw new Error(d.error || ('Request failed (' + r.status + ')'));
         return d;
       });
     });
+  }
+
+  /** Guard for anything that writes. Returns true when the caller should stop.
+   *  One helper rather than a check at each of eight call sites, so a new
+   *  action cannot forget it. */
+  function needsAccount(where){
+    if (state.me) return false;
+    var note = $(where || 'listNote');
+    if (note){
+      note.innerHTML = 'Sign in to do that \u2014 <a href="/login">sign in or create an account</a>. '
+        + 'Reading is open to everyone.';
+    }
+    return true;
   }
 
   function show(which){
@@ -428,6 +455,10 @@
   function paintMe(){
     var me = state.me;
     $('authbar').hidden = !me;
+    $('guestbar').hidden = !!me;
+    // The + button opens an editor that cannot save without a session. Point
+    // it at the door instead of letting it fail on submit.
+    $('newBtn').title = me ? 'New prompt' : 'Sign in to publish a prompt';
     if (!me) return;
     $('who').textContent = me.displayName || me.email;
 
@@ -890,7 +921,10 @@
   }
 
   // ---- wiring ------------------------------------------------------------
-  $('newBtn').addEventListener('click', function(){ openEditor('new', {}); });
+  $('newBtn').addEventListener('click', function(){
+    if (!state.me) { window.location.href = '/login'; return; }
+    openEditor('new', {});
+  });
   $('detailBack').addEventListener('click', function(){ show('listView'); });
   $('editBack').addEventListener('click', function(){ show(state.current ? 'detailView' : 'listView'); });
   $('acctBack').addEventListener('click', function(){ show('listView'); });
@@ -916,6 +950,10 @@
     loadList();
   });
   $('scopeSeg').addEventListener('click', function(e){
+    // Mine and Saved are both "yours", and a guest has neither. Say so where
+    // they tapped rather than showing them an empty list they cannot explain.
+    var btn = e.target.closest('[data-scope]');
+    if (btn && btn.getAttribute('data-scope') !== 'all' && needsAccount('listNote')) return;
     var b = e.target.closest('button[data-scope]'); if (!b) return;
     state.scope = b.getAttribute('data-scope');
     Array.prototype.forEach.call(this.querySelectorAll('button'), function(x){
@@ -930,6 +968,7 @@
     var id = card.getAttribute('data-id');
     var voteBtn = e.target.closest('button[data-vote]');
     if (voteBtn){
+      if (needsAccount('listNote')) return;
       var want = Number(voteBtn.getAttribute('data-vote'));
       var pressed = voteBtn.getAttribute('aria-pressed') === 'true';
       api('/api/prompts/' + encodeURIComponent(id) + '/vote', { method:'POST', body:{ value: pressed ? 0 : want } })
@@ -956,13 +995,17 @@
   });
 
   $('dSave').addEventListener('click', function(){
+    if (needsAccount('dStatus')) return;
     var p = state.current, want = !p.saved;
     api('/api/prompts/' + encodeURIComponent(p.id) + '/save', { method:'POST', body:{ saved: want } })
       .then(function(){ p.saved = want; p.saveCount = (p.saveCount||0) + (want?1:-1); paintDetail(); loadMine(); })
       .catch(function(e){ $('dStatus').textContent = e.message; });
   });
 
-  $('dRemixBtn').addEventListener('click', function(){ openEditor('remix', state.current); });
+  $('dRemixBtn').addEventListener('click', function(){
+    if (needsAccount('dStatus')) return;
+    openEditor('remix', state.current);
+  });
   $('dEdit').addEventListener('click', function(){ openEditor('edit', state.current); });
   $('dDelete').addEventListener('click', function(){
     if (!window.confirm('Delete this prompt? This cannot be undone.')) return;
@@ -973,6 +1016,7 @@
 
   // Claude proposes; the user applies. Nothing is written by the AI route.
   $('dImprove').addEventListener('click', function(){
+    if (needsAccount('dStatus')) return;
     var p = state.current;
     $('dStatus').innerHTML = '<span class="spinner"></span> Asking Claude…';
     $('dImprove').disabled = true;
@@ -1078,13 +1122,23 @@
   });
 
   // ---- boot --------------------------------------------------------------
+  //
+  // A signed-out visitor used to be bounced to /login before seeing anything,
+  // which made a SHARED prompt library the one thing on this domain you had
+  // to join to look at - and made the landing page's live preview a picture
+  // of a sign-in form. The library loads either way now; what needs a session
+  // asks for one at the moment it is used.
   buildEditorChoices();
   api('/api/auth/me').then(function(d){
-    if (!d.signedIn){ window.location.replace('/login'); return; }
-    state.me = d.user;
+    state.me = d.signedIn ? d.user : null;
     paintMe();
-    return Promise.all([loadList(), loadMine()]);
-  }).catch(function(){});
+    return state.me ? Promise.all([loadList(), loadMine()]) : loadList();
+  }).catch(function(){
+    // Even the identity call failing should not leave a blank page: the
+    // library is public, so try it anyway.
+    paintMe();
+    loadList();
+  });
 })();
 </script>
 <!-- Counts a view on the root domain, where the trending ranking lives. -->

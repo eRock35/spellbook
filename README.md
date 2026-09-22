@@ -82,6 +82,9 @@ addable afterwards for Face ID. Accounts are `users/<uid>` where `uid` is the
 base64url of the lowercased email — deterministic, so `create()` fails on a
 duplicate rather than needing a uniqueness index Firestore doesn't have.
 
+**Reading takes no account at all** — the public library, and any prompt in it,
+is open to anyone. Everything that writes needs a session.
+
 Everything free is free the moment you sign up: publish, vote, save, remix.
 
 **Anything that calls Claude needs the shared account and a budget** — the gate

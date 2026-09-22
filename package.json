@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node test/promptfields.test.js && node test/seed.test.js && node test/shared-login.test.js"
+    "test": "node test/promptfields.test.js && node test/seed.test.js && node test/public-browse.test.js && node test/shared-login.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.68.0",
