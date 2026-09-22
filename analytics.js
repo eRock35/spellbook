@@ -33,6 +33,13 @@ const APPS = {
   football:  { label: 'College Football', url: 'https://footballapp.strongtechnicalconsulting.com', icon: '\u{1F3C8}' },
   hopscotch: { label: 'Hopscotch', url: 'https://beer.strongtechnicalconsulting.com', icon: '\u{1F37A}' },
   trip:      { label: 'Trip Planner', url: 'https://trip.strongtechnicalconsulting.com', icon: '✈️' },
+  // The custom domain is the intended address and is what this field should
+  // say, but it only resolves once the Cloud Run DOMAIN MAPPING exists -- the
+  // DNS CNAME alone is not enough, Google needs the mapping to know which
+  // service to route to. Until then the landing page's beacon targets the
+  // *.run.app hostname instead (see site/index.html in eriks-projects). This
+  // field is metadata in the stats payload, not the beacon target, so the
+  // mismatch costs nothing while it lasts.
   spellbook: { label: 'Spellbook', url: 'https://spellbook.strongtechnicalconsulting.com', icon: '✨' },
 };
 

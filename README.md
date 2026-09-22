@@ -118,25 +118,26 @@ It calls no model — it's arithmetic, so it costs nothing and needs no approval
 check, unlike trip-planner's watch sweep. Auth is `requireLoginOrCron`: a normal
 session, or the `X-Cron-Key` header matching the `cron-secret` value.
 
-## Why it's in this repo
+## One repo, one app
 
-Erik's convention is one repo per project, and this should have been
-`eRock35/prompt-library`. The session that built it could not create a
-repository — the GitHub App token returns `403 Resource not accessible by
-integration` on `POST /user/repos` — so rather than stall, it shipped here.
+Spellbook has its own repository, matching Erik's convention. The repo name, the
+Cloud Run service, the Firestore database and the `gcpdeploy` alias are all the
+single word `spellbook` — deliberately, so this app never needs the bridging
+that Hopscotch does (repo `beer-app`, service `hopscotch`, alias `beer`, and a
+runbook column to explain it).
 
-`eriks-projects` is a defensible home: this service is the analytics backend for
-the landing page that this repo already contains, so the two genuinely belong
-together. But if Erik wants it split out, it is a `git mv` plus a new repo and
-one line in `.claude/skills/deploy/apps.json`; nothing in the code knows where
-it lives.
+It briefly lived inside `eriks-projects/spellbook/` because the session that
+built it could not create a repository. That is history now; the only thing left
+behind there is the landing page's beacon `<script>`.
 
-The landing page keeps its own `Dockerfile`, `package.json` and `server.js` at
-the repo root and is **completely untouched by this app** beyond one deferred
-`<script>` in `site/index.html`. It must stay that way: it is deliberately
-dependency-light and scales to zero, which is the only reason it's affordable on
-Cloud Run. `gcpdeploy` builds this app from the `spellbook/` subtree via a
-`subdir` key in `apps.json`, so the two never share a build context.
+**The landing page still depends on this service**, and that dependency is
+one-directional and deliberately weak: `site/index.html` in `eriks-projects`
+posts a view beacon here and reads `GET /api/stats/public` to order its cards.
+Both are decoration — that script runs after paint, catches everything, and the
+authored card order is already correct when no stats arrive. If this service is
+down or cold-starting, the root domain looks exactly as written. Preserve that
+property if you touch either side; it is the only reason a static page is
+allowed to call a service at all.
 
 ## Running it locally
 
