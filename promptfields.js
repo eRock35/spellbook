@@ -64,7 +64,17 @@ function cleanTags(values) {
  */
 function extractVariables(body) {
   const out = [];
-  const re = /\{\{\s*([a-zA-Z0-9_ -]{1,40}?)\s*\}\}/g;
+  // Apostrophes and a longer cap because authors write English, not tokens:
+  // `{{what didn't work}}` and `{{something adjacent I actually understand}}`
+  // are the natural way to name a blank, and both were silently dropped by a
+  // 40-character alphanumeric rule — no form field, no error, the prompt just
+  // quietly had fewer blanks than its text showed.
+  //
+  // Commas and slashes stay OUT on purpose. `{{name, role, company}}` and
+  // `{{a lot / some / nothing}}` are three blanks and a set of options
+  // wearing one placeholder, and rendering either as a single text box helps
+  // nobody. Leaving them unmatched keeps the pressure on splitting them up.
+  const re = /\{\{\s*([a-zA-Z0-9_ '\u2019.-]{1,60}?)\s*\}\}/g;
   let m = re.exec(body);
   while (m && out.length < 20) {
     const name = m[1].trim();

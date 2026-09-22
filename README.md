@@ -64,6 +64,17 @@ Spellbook's remaining part is one tag in `public/index.html`:
 `public/beacon.js` is a copy of `eriks-projects/shared/beacon.js`; edit it there
 and run `node scripts/sync-shared.js`.
 
+## It comes with a shelf
+
+A fresh install writes twelve starter prompts — real ones, across coding,
+writing, analysis, learning and productivity, each with `{{blanks}}` so the
+fill-in form has something to show. They are written once and are then ordinary
+prompts: votable, remixable, editable, deletable. A restart does not bring back
+one you deleted.
+
+See `seed.js`, which explains why this is a write-once seed rather than the
+read-path seeds the sibling apps use.
+
 ## Sign-in and the AI gate
 
 Open registration (email + a 10-character minimum password), with a passkey

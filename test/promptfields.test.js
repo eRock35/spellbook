@@ -20,7 +20,26 @@ test('finds placeholders, de-duplicates, keeps author order', () => {
 test('tolerates inner whitespace and rejects junk', () => {
   assert.deepStrictEqual(pf.extractVariables('a {{  spaced name  }} b'), ['spaced name']);
   // Empty braces, nested braces and over-long names must not become variables.
-  assert.deepStrictEqual(pf.extractVariables('{{}} {{{x}}} ' + '{{' + 'z'.repeat(41) + '}}'), ['x']);
+  assert.deepStrictEqual(pf.extractVariables('{{}} {{{x}}} ' + '{{' + 'z'.repeat(61) + '}}'), ['x']);
+});
+
+test('a blank named in plain English is still a blank', () => {
+  // These were all silently dropped once: no form field, no error, the prompt
+  // simply had fewer blanks than its own text showed.
+  assert.deepStrictEqual(
+    pf.extractVariables("{{what didn't work}} and {{what I\u2019m trying to do}}"),
+    ["what didn't work", 'what I\u2019m trying to do']);
+  assert.deepStrictEqual(
+    pf.extractVariables('{{something adjacent I actually understand}}'),
+    ['something adjacent I actually understand']);
+});
+
+test('a placeholder wearing several blanks is not matched', () => {
+  // Deliberate. A comma or a slash means the author packed a list into one
+  // box; rendering it as a single text field would help nobody, so it stays
+  // unmatched and visible in the body instead.
+  assert.deepStrictEqual(pf.extractVariables('{{name, role, company}}'), []);
+  assert.deepStrictEqual(pf.extractVariables('{{a lot / some / nothing}}'), []);
 });
 
 test('no placeholders means no form', () => {

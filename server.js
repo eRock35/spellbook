@@ -14,6 +14,7 @@ const path = require('path');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
+const seed = require('./seed');
 const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const {
@@ -687,4 +688,19 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Spellbook listening on :${PORT}`);
+
+  // Stock the shelf, once, ever. After the listener rather than before it so a
+  // Firestore that is slow or unreachable delays no request and fails no
+  // health check - an empty library is a worse first impression than a small
+  // one, but an app that will not boot is worse than both.
+  //
+  // The owning uid is the admin's so a seeded prompt can be fixed from inside
+  // the app; with no ADMIN_EMAIL it falls back to a reserved id and they are
+  // read-only. seed.js explains why that is the honest fallback.
+  const authorId = ADMIN_EMAIL
+    ? Buffer.from(ADMIN_EMAIL.toLowerCase()).toString('base64url')
+    : undefined;
+  seed.ensureSeeded(db, { authorId }).then((r) => {
+    if (r.seeded) console.log(`seed: wrote ${r.count} starter prompts`);
+  });
 });

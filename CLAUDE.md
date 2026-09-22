@@ -94,6 +94,52 @@ What stays here is one line in `public/index.html`:
 `beacon.js` is a **copy** — the source is `eriks-projects/shared/beacon.js` and
 `scripts/sync-shared.js` keeps it honest. Don't edit it here.
 
+## The shelf is stocked, once, ever
+
+`seed.js` writes twelve starter prompts the first time the app boots against an
+empty database. An empty library is a worse pitch than a small one — nobody
+writes the first entry into a blank page, and until you have seen one you
+cannot tell a prompt library from a notes app.
+
+**It is not the same kind of seed as `board.js` or `schedule.js` elsewhere.**
+Those are read-path seeds: what a fresh database *serves*, never written, so
+"restore the original" can never drift. That shape is wrong here, because a
+prompt is voted on, saved, copied and remixed and none of that can attach to
+something that exists only in a file. These are written into real documents and
+are then ordinary prompts.
+
+Written once means exactly once. `control/seed` is claimed with `create()`,
+which fails if it exists — so two instances booting together cannot both stock
+the shelf, and **a later deploy cannot resurrect a prompt someone deleted on
+purpose**. Deleting that one document is the only way to seed again. If the
+write fails after the claim, the marker is released so the next boot retries
+rather than leaving the library empty forever.
+
+The byline is `Spellbook`; the owning uid is the admin's, so a typo in a seed
+can be fixed from inside the app instead of needing a Firestore write. With no
+`ADMIN_EMAIL` they fall back to a reserved id and are read-only — the app has
+no admin override on `mustOwn`, and that is the honest outcome rather than a
+silent one.
+
+**No seed carries invented engagement.** Every count is zero. Fabricated
+upvotes would be a lie on the one surface this app asks people to trust.
+
+### The blanks are the point, and they were silently dropping
+
+`extractVariables` matched `[a-zA-Z0-9_ -]{1,40}`, so `{{what didn't work}}`,
+`{{something adjacent I actually understand}}` and `{{name, role, company}}`
+all produced **no field and no error** — the prompt simply had fewer blanks
+than its own text showed. Apostrophes and a 60-character cap are in now.
+
+Commas and slashes are still refused, deliberately: `{{name, role, company}}`
+is three blanks and `{{a lot / some / nothing}}` is a set of options, and
+rendering either as one text box helps nobody. `test/seed.test.js` asserts that
+every placeholder written in a seed is a placeholder the form will render, so
+the shelf cannot quietly demonstrate the broken shape.
+
+A blank's name becomes its form label. Put the guidance in the prose beside it,
+not inside the braces.
+
 ## Indexes and the in-memory filter
 
 Five composite indexes, in `firestore.indexes.json`, backing the four
