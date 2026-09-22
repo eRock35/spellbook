@@ -3,19 +3,27 @@
 <title>Spellbook</title>
 <style>
   :root{
-    --bg:#F2F2F7; --card:#FFFFFF; --fill:rgba(120,120,128,0.12); --fill-2:rgba(120,120,128,0.18);
-    --label:#000; --label-2:rgba(60,60,67,0.6); --label-3:rgba(60,60,67,0.4);
-    --sep:rgba(60,60,67,0.29);
-    --tint:#5856D6; --red:#FF3B30; --orange:#FF9500; --green:#34C759;
-    --shadow:0 1px 2px rgba(0,0,0,.04), 0 10px 24px rgba(0,0,0,.06);
+    --bg:#F6F5FB; --card:#FFFFFF; --fill:rgba(99,91,255,0.07); --fill-2:rgba(99,91,255,0.13);
+    --label:#15131F; --label-2:#5E5A72; --label-3:#908BA6;
+    --sep:rgba(21,19,31,0.10); --line:rgba(21,19,31,0.08);
+    --tint:#5B4BE8; --tint-2:#8B5CF6; --tint-soft:rgba(91,75,232,0.10);
+    --red:#E5484D; --orange:#F5A524; --green:#17A34A;
+    --code:#F4F2FE; --code-ink:#332D5C;
+    --shadow:0 1px 2px rgba(21,19,31,.04), 0 8px 24px rgba(21,19,31,.06);
+    --shadow-lift:0 2px 6px rgba(21,19,31,.06), 0 18px 40px rgba(91,75,232,.14);
+    --radius:16px;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
-      --bg:#000; --card:#1C1C1E; --fill:rgba(120,120,128,0.24); --fill-2:rgba(120,120,128,0.34);
-      --label:#fff; --label-2:rgba(235,235,245,0.6); --label-3:rgba(235,235,245,0.4);
-      --sep:rgba(84,84,88,0.65);
-      --tint:#7D7AFF; --red:#FF453A; --orange:#FF9F0A; --green:#32D74B;
-      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.45);
+      --bg:#0D0B14; --card:#17151F; --fill:rgba(140,130,255,0.10); --fill-2:rgba(140,130,255,0.18);
+      --label:#F5F3FF; --label-2:#A8A2C0; --label-3:#6F6A86;
+      --sep:rgba(245,243,255,0.12); --line:rgba(245,243,255,0.09);
+      --tint:#9B8CFF; --tint-2:#C4A6FF; --tint-soft:rgba(155,140,255,0.14);
+      --red:#FF6369; --orange:#FFB224; --green:#3DD68C;
+      --code:#120F1C; --code-ink:#CFC8F5;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.5);
+      --shadow-lift:0 2px 8px rgba(0,0,0,.5), 0 20px 46px rgba(0,0,0,.6);
+      --radius:16px;
     }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -25,10 +33,19 @@
     padding-inline:16px; padding-block:20px 100px; -webkit-font-smoothing:antialiased;
   }
   .wrap{max-width:680px; margin:0 auto; display:flex; flex-direction:column; gap:16px;}
+
   .title-block{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:2px 2px 0;}
   .eyebrow{font-size:13px; font-weight:600; color:var(--tint); text-transform:uppercase; letter-spacing:.02em; margin:0 0 2px;}
-  h1{font-size:28px; font-weight:700; letter-spacing:-.02em; margin:0; line-height:1.1;}
-  h1 .glyph{font-size:24px;}
+  h1{font-size:30px; font-weight:800; letter-spacing:-.03em; margin:0; line-height:1.05;
+    background:linear-gradient(100deg, var(--label) 30%, var(--tint) 75%, var(--tint-2));
+    -webkit-background-clip:text; background-clip:text; color:transparent;}
+  h1 .glyph{font-size:24px; -webkit-text-fill-color:initial;}
+  @media (min-width:1000px){ h1{font-size:34px;} }
+  /* A search box that looks like the main way in, because it is. */
+  #q{font-size:15px; padding:12px 14px; border-radius:12px; background:var(--card);
+    border:1px solid var(--line); box-shadow:var(--shadow);}
+  #q:focus{outline:none; border-color:var(--tint); box-shadow:0 0 0 3px var(--tint-soft);}
+  .segmented button[aria-pressed="true"]{background:var(--card); color:var(--tint);}
   .sub{color:var(--label-2); font-size:13.5px; margin:4px 0 0;}
   .section-header{font-size:13px; font-weight:600; color:var(--label-2); text-transform:uppercase; letter-spacing:.02em; margin:4px 4px 0;}
   .card{background:var(--card); border-radius:18px; box-shadow:var(--shadow); overflow:hidden;}
@@ -64,24 +81,53 @@
     font-weight:600; padding:7px 4px; border-radius:8px; cursor:pointer;}
   .segmented button[aria-pressed="true"]{background:var(--card); color:var(--label); box-shadow:0 1px 2px rgba(0,0,0,.12);}
 
-  /* prompt cards */
+  /* prompt cards
+     The old card showed a title, a summary and eight uppercase pills - every
+     field except the one thing anyone came for, which is the prompt. The
+     snippet below is the card now; the chips are demoted to a quiet footer. */
   .plist{display:flex; flex-direction:column; gap:10px;}
-  .pcard{background:var(--card); border-radius:16px; box-shadow:var(--shadow); padding:14px 16px; display:flex; gap:12px; align-items:flex-start;}
-  .votecol{display:flex; flex-direction:column; align-items:center; gap:1px; flex:0 0 auto; width:38px;}
-  .votebtn{border:none; background:none; color:var(--label-3); font-size:17px; line-height:1; padding:3px 6px; cursor:pointer; border-radius:8px;}
-  .votebtn:hover{background:var(--fill);}
+  .pcard{background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow); border:1px solid var(--line);
+    padding:16px; display:flex; flex-direction:column; gap:10px; position:relative;
+    transition:transform .16s ease, box-shadow .16s ease, border-color .16s ease;}
+  @media (hover:hover){
+    .pcard:hover{transform:translateY(-2px); box-shadow:var(--shadow-lift); border-color:var(--tint-soft);}
+  }
+  .pcard-head{display:flex; gap:10px; align-items:flex-start;}
+  .pbody{flex:1; min-width:0; text-align:left;}
+  .ptitle{margin:0 0 2px; font-size:16px; font-weight:700; letter-spacing:-.01em; cursor:pointer; line-height:1.25;}
+  .ptitle:hover{color:var(--tint);}
+
+  /* The vote control, as one compact pill instead of a 38px column of
+     triangles wrapped around a number. */
+  .votecol{display:flex; align-items:center; gap:2px; flex:0 0 auto; background:var(--fill);
+    border-radius:999px; padding:3px 4px;}
+  .votebtn{border:none; background:none; color:var(--label-3); font-size:12px; line-height:1;
+    padding:4px 5px; cursor:pointer; border-radius:999px;}
+  .votebtn:hover{background:var(--fill-2); color:var(--label);}
   .votebtn[aria-pressed="true"].up{color:var(--green);}
   .votebtn[aria-pressed="true"].down{color:var(--red);}
-  .votenum{font-size:14px; font-weight:700; font-variant-numeric:tabular-nums;}
-  .pbody{flex:1; min-width:0; text-align:left;}
-  .ptitle{margin:0 0 3px; font-size:16.5px; font-weight:700; letter-spacing:-.01em; cursor:pointer;}
-  .pmeta{font-size:12.5px; color:var(--label-2); display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; align-items:center;}
-  .chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:8px;}
-  .chip{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; letter-spacing:.02em;
-    text-transform:uppercase; border-radius:999px; padding:3px 8px; background:var(--fill); color:var(--label-2);}
-  .chip.plat{background:rgba(88,86,214,.14); color:var(--tint);}
-  .chip.tag{text-transform:none; letter-spacing:0; font-weight:600;}
-  .chip.priv{background:rgba(255,149,0,.16); color:var(--orange);}
+  .votenum{font-size:13px; font-weight:700; font-variant-numeric:tabular-nums; min-width:18px; text-align:center;}
+  .votecol.mine{background:none; padding:3px 0;}
+
+  /* The prompt itself. Clipped with a fade rather than an ellipsis: a prompt
+     is a block of text and a hard cut reads as the end of it. */
+  .psnippet{position:relative; margin:0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:12.5px; line-height:1.55; color:var(--code-ink); background:var(--code);
+    border-radius:10px; padding:11px 12px; max-height:6.2em; overflow:hidden;
+    white-space:pre-wrap; word-break:break-word; cursor:pointer;}
+  .psnippet::after{content:""; position:absolute; left:0; right:0; bottom:0; height:2.1em;
+    background:linear-gradient(to bottom, transparent, var(--code));}
+  .psnippet .var{color:var(--tint); background:var(--tint-soft); border-radius:4px; padding:0 3px; font-weight:600;}
+
+  .pmeta{font-size:12px; color:var(--label-2); display:flex; flex-wrap:wrap; gap:4px 10px; align-items:center;}
+  .chips{display:flex; flex-wrap:wrap; gap:5px;}
+  .chip{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; letter-spacing:.01em;
+    border-radius:8px; padding:3px 7px; background:var(--fill); color:var(--label-2);}
+  /* Platform is the one chip worth colour: it answers "will this work where
+     I am". Category and tags are quiet by design. */
+  .chip.plat{background:var(--tint-soft); color:var(--tint); font-weight:700;}
+  .chip.tag{color:var(--label-3);}
+  .chip.priv{background:rgba(245,165,36,.16); color:var(--orange); font-weight:700;}
   .chipbtn{border:none; cursor:pointer; font:inherit;}
 
   /* detail */
@@ -108,6 +154,39 @@
   .spinner{display:inline-block; width:14px; height:14px; border:2px solid var(--fill-2); border-top-color:var(--tint);
     border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
   @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---- desktop ----------------------------------------------------------
+     LAST in the file on purpose. These override base rules of equal
+     specificity, and the first attempt sat above them - so the grid stayed a
+     flex column and the rail labels stayed hidden, on a stylesheet that
+     looked correct. */
+  /* Desktop is a layout, not a wider phone.
+     The filters stop being four stacked bars pushing the content off-screen
+     and become a rail you can see the whole time; the list uses the width it
+     was given instead of leaving two thirds of a 1440px window empty. */
+  @media (min-width:1000px){
+    body{padding-inline:32px;}
+    .wrap{max-width:1240px; gap:20px;}
+    #listView{display:grid; grid-template-columns:248px minmax(0,1fr); gap:28px; align-items:start;}
+    #listView .toolbar{position:sticky; top:24px; margin-bottom:0;}
+    #listView .plist{grid-column:2;}
+    #listView #listNote{grid-column:2;}
+    .toolbar .segmented{flex-direction:column; background:none; padding:0; gap:2px;}
+    .toolbar .segmented button{text-align:left; padding:8px 10px; font-size:13.5px;}
+    .toolbar .row{flex-direction:column;}
+    .rail-label{display:block;}
+    .plist{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:14px;}
+    /* The reading views stay a column - a 1200px line of prose is worse. */
+    #detailView, #editView, #acctView{max-width:760px;}
+  }
+  .rail-label{display:none; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--label-3); margin:14px 2px 6px;}
+  @media (min-width:1000px){
+    .plist{display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; align-content:start;}
+    .rail-label{display:block;}
+    /* The filter selects are secondary controls in the rail, not buttons. */
+    .toolbar select{background:var(--card); border:1px solid var(--line); font-size:14px;}
+  }
   [hidden]{display:none !important;}
 </style>
 </head>
@@ -138,20 +217,25 @@
   <section id="listView">
     <div class="toolbar" style="margin-bottom:14px;">
       <input id="q" type="search" placeholder="Search prompts…" autocomplete="off">
+      <!-- These read as a segmented control on a phone and as a labelled rail
+           on a desktop; .rail-label only appears at the wider layout. -->
+      <div class="rail-label">Sort</div>
       <div class="segmented" id="sortSeg" role="group" aria-label="Sort">
         <button data-sort="trending" aria-pressed="true">Trending</button>
         <button data-sort="top" aria-pressed="false">Top</button>
         <button data-sort="new" aria-pressed="false">New</button>
         <button data-sort="copied" aria-pressed="false">Most used</button>
       </div>
-      <div class="row">
-        <select id="platformSel" aria-label="Filter by platform"></select>
-        <select id="categorySel" aria-label="Filter by category"></select>
-      </div>
+      <div class="rail-label">Show</div>
       <div class="segmented" id="scopeSeg" role="group" aria-label="Which prompts">
         <button data-scope="all" aria-pressed="true">Everyone's</button>
         <button data-scope="mine" aria-pressed="false">Mine</button>
         <button data-scope="saved" aria-pressed="false">Saved</button>
+      </div>
+      <div class="rail-label">Filter</div>
+      <div class="row">
+        <select id="platformSel" aria-label="Filter by platform"></select>
+        <select id="categorySel" aria-label="Filter by category"></select>
       </div>
     </div>
     <div class="plist" id="plist"></div>
@@ -392,29 +476,48 @@
     // You cannot vote on your own prompt (the API rejects it), so don't offer
     // the control — a button that always errors is worse than no button.
     var mine = p.isMine || (state.me && p.authorId === state.me.id);
+    // The blanks count is gone: they are visible in the snippet now, picked
+    // out in colour, which says it better than a pill reading "2 BLANKS".
     var chips = platformChips(p)
       + '<span class="chip">' + esc(CATEGORY_LABELS[p.category] || p.category) + '</span>'
       + (p.visibility === 'private' ? '<span class="chip priv">Private</span>' : '')
-      + (p.variables && p.variables.length ? '<span class="chip">' + p.variables.length + ' blank' + (p.variables.length>1?'s':'') + '</span>' : '')
-      + (p.tags || []).map(function(t){ return '<span class="chip tag">#' + esc(t) + '</span>'; }).join('');
+      + (p.tags || []).slice(0, 3).map(function(t){ return '<span class="chip tag">#' + esc(t) + '</span>'; }).join('');
     return '<div class="pcard" data-id="' + esc(p.id) + '">'
-      + '<div class="votecol">'
-      +   (mine ? '' : '<button class="votebtn up" data-vote="1" aria-pressed="' + (p.myVote === 1) + '" aria-label="Upvote">&#9650;</button>')
-      +   '<span class="votenum">' + fmt(p.score) + '</span>'
-      +   (mine ? '<span class="muted" style="font-size:10px; text-align:center; line-height:1.2;">yours</span>'
-              : '<button class="votebtn down" data-vote="-1" aria-pressed="' + (p.myVote === -1) + '" aria-label="Downvote">&#9660;</button>')
-      + '</div>'
-      + '<div class="pbody">'
-      +   '<h3 class="ptitle" data-open="1">' + esc(p.title) + '</h3>'
-      +   (p.summary ? '<div class="muted">' + esc(p.summary) + '</div>' : '')
-      +   '<div class="chips">' + chips + '</div>'
-      +   '<div class="pmeta">'
-      +     '<span>' + esc(p.authorName) + '</span>'
-      +     '<span>' + ago(p.createdAt) + '</span>'
-      +     '<span>' + fmt(p.copyCount) + ' copied</span>'
-      +     (p.saved ? '<span style="color:var(--tint); font-weight:600;">Saved</span>' : '')
+      + '<div class="pcard-head">'
+      +   '<div class="pbody">'
+      +     '<h3 class="ptitle" data-open="1">' + esc(p.title) + '</h3>'
+      +     (p.summary ? '<div class="muted">' + esc(p.summary) + '</div>' : '')
       +   '</div>'
+      +   '<div class="votecol' + (mine ? ' mine' : '') + '">'
+      +     (mine ? '' : '<button class="votebtn up" data-vote="1" aria-pressed="' + (p.myVote === 1) + '" aria-label="Upvote">&#9650;</button>')
+      +     '<span class="votenum" ' + (mine ? 'title="Your own prompt - you cannot vote on it"' : '') + '>' + fmt(p.score) + '</span>'
+      +     (mine ? '' : '<button class="votebtn down" data-vote="-1" aria-pressed="' + (p.myVote === -1) + '" aria-label="Downvote">&#9660;</button>')
+      +   '</div>'
+      + '</div>'
+      // The prompt. This is what the card is for.
+      + '<div class="psnippet" data-open="1">' + snippet(p.body) + '</div>'
+      + '<div class="chips">' + chips + '</div>'
+      + '<div class="pmeta">'
+      +   '<span>' + esc(p.authorName) + '</span>'
+      +   '<span>' + ago(p.createdAt) + '</span>'
+      +   (p.copyCount ? '<span>' + fmt(p.copyCount) + ' copied</span>' : '')
+      +   (p.saved ? '<span style="color:var(--tint); font-weight:600;">Saved</span>' : '')
       + '</div></div>';
+  }
+
+  /** A few lines of the prompt, with its {{blanks}} picked out.
+   *
+   *  Escaped FIRST and then marked up - the body is user-written text going
+   *  into innerHTML, and highlighting before escaping would turn a prompt
+   *  containing a tag into a script tag. */
+  function snippet(body){
+    var text = String(body || '').replace(/\s+$/,'');
+    if (!text) return '<span class="muted">No body yet.</span>';
+    // Enough to fill the clip box; the fade hides the cut.
+    if (text.length > 420) text = text.slice(0, 420);
+    return esc(text).replace(/\{\{([^}]{1,60})\}\}/g, function(_, name){
+      return '<span class="var">{{' + name + '}}</span>';
+    });
   }
 
   function renderList(){

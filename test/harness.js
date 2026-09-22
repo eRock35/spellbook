@@ -60,6 +60,15 @@ class FakeFirestore {
     });
     return mk();
   }
+  /** Firestore's multi-document read. Spellbook uses it to fetch a page of
+   *  prompts by id in one round trip, and a fake without it fails as
+   *  `db.getAll is not a function` - which reads like an app bug and is not.
+   *  Real getAll returns a snapshot per ref, IN ORDER, present or not. */
+  async getAll(...refs) {
+    const flat = refs.flat();
+    return Promise.all(flat.map((r) => r.get()));
+  }
+
   batch() { const ops = []; return { set(r, v, o) { ops.push([r, v, o]); }, delete(r) { ops.push([r, null]); }, async commit() { for (const [r, v, o] of ops) v === null ? await r.delete() : await r.set(v, o); } }; }
 }
 
