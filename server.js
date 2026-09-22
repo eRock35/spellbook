@@ -7,10 +7,7 @@
 // Code is not the same artifact as one tuned for Midjourney and a library that
 // pretends otherwise is useless. Ranking is time-decayed, so "trending" means
 // recent rather than merely popular.
-//
-// Second job, deliberately bolted on here: this service is also the analytics
-// backend for every app on the domain (see analytics.js for why it lives here
-// and not in the landing page).
+
 
 const express = require('express');
 const path = require('path');
@@ -19,7 +16,6 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
 const identityLib = require('./identity');
 const identityStore = require('./identity-store');
-const { createAnalytics } = require('./analytics');
 const {
   PLATFORMS, CATEGORIES, clean, pickList, cleanTags, extractVariables,
   computeTrend, bodyToPromptFields,
@@ -155,8 +151,11 @@ app.use(bridgeSharedAccount);
 // Price and record every model call this app makes.
 identity.meter(anthropic);
 
-const analytics = createAnalytics({ db, requireAdmin, requireLogin });
-analytics.mount(app);
+// View counting used to live here, and it was the wrong address: Erik's
+// numbers for every app sat inside one of the apps being counted. It is on
+// the root domain now, next to the admin panel that reads it - see
+// eriks-projects/lib/views.js. Spellbook still reports itself, through the
+// same shared/beacon.js every other app carries.
 
 /**
  * An AI call needs the SHARED account, not just a Spellbook login.
@@ -667,17 +666,15 @@ app.post('/api/cron/rollup', requireLoginOrCron, async (req, res) => {
     }
     if (inBatch > 0) await batch.commit();
 
-    const apps = await analytics.overview(30);
+    // The cross-app leaderboard used to be snapshotted here too. It belongs to
+    // the service that now owns the counting, not to this one.
     await db.collection('control').doc('rollup').set({
       lastRunAt: new Date().toISOString(),
       scanned: snap.size,
       rescored,
-      // A compact leaderboard snapshot, so `gcpdeploy verify` reads something
-      // meaningful rather than just a timestamp.
-      appRanking: apps.map((a) => ({ app: a.app, views7: a.views7, rank: a.rank })),
     }, { merge: true });
 
-    res.json({ scanned: snap.size, rescored, apps: apps.length });
+    res.json({ scanned: snap.size, rescored });
   } catch (err) {
     console.error('POST /api/cron/rollup', err);
     res.status(500).json({ error: 'Rollup failed.' });

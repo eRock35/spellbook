@@ -6,7 +6,18 @@
 // that misses a placeholder, a weight that makes the front page never turn
 // over), and they are the cheapest to check. Nothing here touches I/O.
 
-const { trendScore } = require('./analytics');
+/**
+ * Hacker-News-shaped decay. Views alone would let a months-old prompt that
+ * once went round a group chat sit at the top forever; dividing by age makes
+ * "trending" mean recent, which is what the word means to a reader.
+ *
+ * This used to be imported from analytics.js. That file was the CROSS-APP
+ * view counter and moved to the landing service; the maths is Spellbook's own
+ * and stayed. Same shape, one owner each.
+ */
+function trendScore(weight, ageHours) {
+  return weight / Math.pow(Math.max(ageHours, 0) + 2, 1.5);
+}
 
 // Closed vocabularies rather than free text, because the whole value of "which
 // platform is this for" is being able to filter on it — and free text gives you
@@ -114,6 +125,7 @@ function bodyToPromptFields(body, user) {
 }
 
 module.exports = {
+  trendScore,
   PLATFORMS, CATEGORIES,
   clean, pickList, cleanTags, extractVariables, computeTrend, bodyToPromptFields,
 };

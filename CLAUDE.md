@@ -1,12 +1,20 @@
 # For Claude: this repo
 
-Spellbook — a shared prompt library that is *also* the view-tracking backend for
-every app on `strongtechnicalconsulting.com`. See `README.md` for what the app
-does and the full data model.
+Spellbook — a shared prompt library. See `README.md` for what the app does and
+the full data model.
+
+It used to be *also* the view-tracking backend for every app on the domain.
+That moved to `eriks-projects/lib/views.js` on 2026-09-22 — Erik's numbers for
+seven apps had no business living inside one of the seven, and the reason they
+did (the landing service being "static and dependency-light") had stopped
+being true well before the split — that service already carries a Firestore, an
+admin gate, the identity store, an uptime prober and a cron. Spellbook now reports itself through the same
+`public/beacon.js` every other app carries, and nothing more.
 
 **This repo is public** (it holds no secrets, no PII, no credentials — those
 live in Secret Manager and env vars). The deployed app is open to registration,
-but anything that spends Anthropic tokens is approval-gated; see below.
+but anything that spends Anthropic tokens needs the shared account and a
+budget; see below.
 
 Cloud Run service `spellbook`, Firestore database `spellbook`, GCP project
 `metal-celerity-236019`, `us-central1`. Repo name, service, database and
@@ -16,8 +24,23 @@ Cloud Run service `spellbook`, Firestore database `spellbook`, GCP project
 
 **Never put an Anthropic call behind `requireLogin` alone.** Registration is
 open, so a login-only gate lets any stranger who finds the URL run Opus 5 on
-Erik's API key. Every model call goes behind `requireAiAccess`, which demands
-`aiAccess === 'approved'` — granted by hand by the admin.
+Erik's API key.
+
+The gate is `requireLogin, requireSharedAccount, identity.requireBudget,
+identity.requireDailyCap`. `requireSharedAccount` is the load-bearing one and
+is easy to mistake for ceremony: `requireBudget` deliberately waves through a
+request carrying no identity session, because most apps here are readable
+signed-out and it must not 402 a passer-by. On its own it would therefore let
+any registered Spellbook user spend unmetered. Spellbook's own sign-in carries
+no balance and never will — the ledger is on the shared account — so the
+honest answer to "may this person spend" is "not until we know who they are
+across the domain".
+
+This replaced `requireAiAccess`, which demanded `aiAccess === 'approved'` from
+the admin by hand. Same reasoning as trip-planner's: a person approving people
+one at a time is a slower version of a budget that never actually bounded
+anything. `requireAiAccess` still exists and is on no route — do not put it
+back in front of a model call.
 
 There are exactly two call sites, both in `server.js`: `/api/ai/draft` and
 `/api/prompts/:id/improve`. Both funnel through `proposePrompt()`. If you add a
@@ -52,21 +75,24 @@ modules diverged on purpose:
 version in here would replace open registration with a one-account gate;
 copying this one out would do the reverse to an app that does not want it.
 
-## What the analytics path stores
+## View tracking lives on the landing service now
 
-Stored: app name, coarse path, referrer **host**, an opaque random visitor id in
-a first-party cookie, and counters.
+`analytics.js`, `public/dashboard.html` and `test/analytics.test.js` are gone
+from this repo. They are `lib/views.js`, `site/views.html` and `test/views.js`
+in `eriks-projects`, served at `/api/beacon`, `/api/stats/public` and the
+admin-gated `/admin/views` on the root domain. Everything that used to be said
+here about what is stored, what is deliberately not, and why
+`santa-rosa-beach-trip` may never join the allowlist is said there now, next to
+the code that enforces it.
 
-Not stored: IP addresses, user agents, full referrer URLs, query strings, or any
-link to a signed-in identity. Enough to count and rank, not enough to follow a
-person. Don't add an IP column "just for geo" without deciding that tradeoff out
-loud.
+What stays here is one line in `public/index.html`:
 
-**`santa-rosa-beach-trip` is not in the tracked-app allowlist in `analytics.js`
-and must not be added.** It is private, holds family PII, and its hostname is
-deliberately kept off public surfaces — `/api/stats/public` is a public surface
-and this repo is public. `test/analytics.test.js` asserts its absence so the
-addition fails loudly rather than quietly.
+```html
+<script src="/beacon.js" data-app="spellbook" async></script>
+```
+
+`beacon.js` is a **copy** — the source is `eriks-projects/shared/beacon.js` and
+`scripts/sync-shared.js` keeps it honest. Don't edit it here.
 
 ## Indexes and the in-memory filter
 
@@ -76,16 +102,6 @@ filtering is applied **in memory** over a bounded window (`SCAN_LIMIT` in
 `server.js`) rather than as more composite indexes — one index instead of a
 dozen at this size, with a cutoff that is visible rather than a silently wrong
 query. Revisit past a few thousand public prompts.
-
-## Charts
-
-`public/dashboard.html` follows a validated categorical palette: slots 1–5 of
-the default data-viz palette, light and dark steps chosen separately (the dark
-column is not an automatic flip). Colour is assigned from the fixed `APP_ORDER`
-list, **never by rank** — a filter or a reshuffle must not repaint the
-survivors. One y-axis, never two. The table view is a peer of the chart, not a
-fallback: it is also the relief the palette's light-mode contrast warning
-requires. If you add a sixth app, fold it in rather than generating a hue.
 
 ## Deploy
 
@@ -97,7 +113,9 @@ the apps. No `gcloud`, no local Docker; direct REST calls.
 `verify` forces the `spellbook-rollup` Scheduler job and reads back
 `control/rollup`. An empty `status` `{}` with a fresh `lastAttemptTime` proves
 Cloud Run booted, the secrets mounted, the cron key matched and the handler
-reached Firestore.
+reached Firestore. The rollup no longer writes a cross-app view snapshot — that
+moved with the tracker — but it still rescores prompts, so it remains the right
+end-to-end probe.
 
 You cannot curl the live app from a session container — the proxy blocks
 `*.run.app` and the custom domains. Verify through GCP's own APIs and ask Erik

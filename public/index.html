@@ -205,7 +205,7 @@
   <div class="authbar" id="authbar" hidden>
     <span class="who" id="who"></span>
     <span style="display:flex; gap:12px; flex:0 0 auto;">
-      <a class="linkbtn" href="/dashboard.html" id="dashLink" hidden style="text-decoration:none;">Analytics</a>
+
       <button class="linkbtn" id="acctBtn">Account</button>
       <button class="linkbtn" id="outBtn">Sign out</button>
     </span>
@@ -424,24 +424,13 @@
     window.scrollTo(0, 0);
   }
 
-  // ---- beacon: this app counts its own views, same as the others ----------
-  function beacon(){
-    try {
-      fetch('/api/beacon', {
-        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
-        keepalive:true,
-        body: JSON.stringify({ app:'spellbook', path: location.pathname, ref: document.referrer || '' })
-      }).catch(function(){});
-    } catch(e){}
-  }
-
   // ---- auth bar ----------------------------------------------------------
   function paintMe(){
     var me = state.me;
     $('authbar').hidden = !me;
     if (!me) return;
     $('who').textContent = me.displayName || me.email;
-    $('dashLink').hidden = false;
+
     var b = $('aiBanner');
     if (me.mustChangePassword){
       b.hidden = false; b.className = 'banner err';
@@ -1090,7 +1079,6 @@
 
   // ---- boot --------------------------------------------------------------
   buildEditorChoices();
-  beacon();
   api('/api/auth/me').then(function(d){
     if (!d.signedIn){ window.location.replace('/login'); return; }
     state.me = d.user;
@@ -1099,4 +1087,6 @@
   }).catch(function(){});
 })();
 </script>
+<!-- Counts a view on the root domain, where the trending ranking lives. -->
+<script src="/beacon.js" data-app="spellbook" async></script>
 </body></html>

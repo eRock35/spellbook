@@ -41,27 +41,28 @@ get a draft; or ask for an existing prompt to be tightened. Both return a
 *proposal* rendered as Apply/Discard — nothing is written until you tap Apply.
 Improving someone else's prompt opens it as a remix rather than editing theirs.
 
-## Analytics: `/dashboard.html`
+## Views are counted on the root domain, not here
 
-Every app on the domain posts a one-line beacon to `POST /api/beacon` here.
-The dashboard shows a ranked bar chart of the last seven days, a multi-series
-line chart of daily views with a crosshair and a table view, stat tiles, and —
-for the admin only — unique visitors, top pages and referrer hosts per app.
+Spellbook used to be the view-tracking backend for every app on the domain: the
+beacon landed here, the dashboard lived at `/dashboard.html`, and the landing
+page read `GET /api/stats/public` from this service. That moved to the landing
+service on 2026-09-22 — the counts for seven apps had no business living inside
+one of the seven.
 
-The landing page consumes `GET /api/stats/public` to order its own cards by
-what's trending and badge the leader.
+It is `lib/views.js`, `site/views.html` and `test/views.js` in `eriks-projects`
+now, serving `POST /api/beacon`, `GET /api/stats/public` and the admin-gated
+`/admin/views` from the root domain. What is stored and what deliberately is
+not — and why `santa-rosa-beach-trip` is absent from the allowlist and must
+stay absent — is documented there, beside the code that enforces it.
 
-**What is stored:** the app name, a coarse path, the referrer *host*, an opaque
-random visitor id in a first-party cookie, and counters.
-**What is deliberately not:** IP addresses, user agents, full referrer URLs,
-query strings, or any link to a signed-in identity. Enough to count and rank,
-not enough to follow a person.
+Spellbook's remaining part is one tag in `public/index.html`:
 
-`santa-rosa-beach-trip` is **not** tracked, and must not be added. It's private,
-holds family PII, and its hostname is deliberately kept off public surfaces —
-`/api/stats/public` is a public surface and this repo is public.
-`test/analytics.test.js` asserts its absence so a future "helpful" addition
-fails loudly.
+```html
+<script src="/beacon.js" data-app="spellbook" async></script>
+```
+
+`public/beacon.js` is a copy of `eriks-projects/shared/beacon.js`; edit it there
+and run `node scripts/sync-shared.js`.
 
 ## Sign-in and the AI gate
 
@@ -71,11 +72,18 @@ base64url of the lowercased email — deterministic, so `create()` fails on a
 duplicate rather than needing a uniqueness index Firestore doesn't have.
 
 Everything free is free the moment you sign up: publish, vote, save, remix.
-**Anything that calls Claude needs `aiAccess === 'approved'`**, granted by hand
-by the admin (whichever account registers with `ADMIN_EMAIL`). Registration is
-open, so a login-only gate on those two routes would let any stranger who found
-the URL run Opus 5 on Erik's API key. `/api/admin/*` returns **404**, not 403,
-to everyone else, so the admin surface isn't advertised.
+
+**Anything that calls Claude needs the shared account and a budget** — the gate
+is `requireLogin, requireSharedAccount, requireBudget, requireDailyCap`.
+Registration is open, so a login-only gate on those two routes would let any
+stranger who found the URL run Opus 5 on Erik's API key; and Spellbook's own
+sign-in carries no balance, because the ledger lives on the
+`strongtechnicalconsulting.com` account rather than in any one app. Signing in
+with that account is offered beside Spellbook's own on the sign-in sheet.
+
+This replaced a hand-granted `aiAccess === 'approved'` flag. `/api/admin/*`
+still returns **404**, not 403, to everyone else, so the admin surface isn't
+advertised.
 
 Forgot your password: prove it with a passkey (the session cookie records
 whether it was proved by password or passkey, and a passkey is at least as
@@ -94,13 +102,11 @@ no mail sender on this project, so there is no reset link — that's the trade.
   downvotes, copyCount, saveCount, remixCount, viewCount, remixOf, trendScore,
   createdAt, updatedAt}`.
   - `prompts/<id>/votes/<uid>` — `{value: 1|-1, at}`. One per account.
-- `analytics/<app>` — rolling totals.
-  - `analytics/<app>/daily/<YYYY-MM-DD>` — `{date, views, uniques}`.
-    - `.../visitors/<vid>` — existence means "seen today"; the cheapest
-      test-and-set available, no read on the repeat-view path.
-  - `analytics/<app>/paths/<key>`, `analytics/<app>/refs/<key>`.
-- `control/rollup` — `{lastRunAt, scanned, rescored, appRanking}` from the last
-  cron tick.
+- `control/rollup` — `{lastRunAt, scanned, rescored}` from the last cron tick.
+
+The `analytics/<app>` tree is gone; it lives in the `eriks-projects` database
+now. Nothing deletes the old documents — they are a day of counts in a database
+this app still owns, harmless and not worth a migration script.
 
 Composite indexes are in `firestore.indexes.json` — five, all on `prompts`.
 Platform, category and tag filtering is applied in memory over a bounded window
@@ -111,8 +117,8 @@ Platform, category and tag filtering is applied in memory over a bounded window
 One Cloud Scheduler job, `spellbook-rollup`, POSTing `/api/cron/rollup`.
 Trend scores are written on every vote and copy, but they *decay*, so without a
 periodic sweep a prompt that stopped getting attention keeps yesterday's score
-and the front page freezes. The route recomputes them and writes a leaderboard
-snapshot to `control/rollup`.
+and the front page freezes. The route recomputes them and writes a summary to
+`control/rollup`.
 
 It calls no model — it's arithmetic, so it costs nothing and needs no approval
 check, unlike trip-planner's watch sweep. Auth is `requireLoginOrCron`: a normal
@@ -127,17 +133,19 @@ that Hopscotch does (repo `beer-app`, service `hopscotch`, alias `beer`, and a
 runbook column to explain it).
 
 It briefly lived inside `eriks-projects/spellbook/` because the session that
-built it could not create a repository. That is history now; the only thing left
-behind there is the landing page's beacon `<script>`.
+built it could not create a repository. That is history now.
 
-**The landing page still depends on this service**, and that dependency is
-one-directional and deliberately weak: `site/index.html` in `eriks-projects`
-posts a view beacon here and reads `GET /api/stats/public` to order its cards.
-Both are decoration — that script runs after paint, catches everything, and the
-authored card order is already correct when no stats arrive. If this service is
-down or cold-starting, the root domain looks exactly as written. Preserve that
-property if you touch either side; it is the only reason a static page is
-allowed to call a service at all.
+**The landing page no longer depends on this service.** It used to: it posted
+its view beacon here and read `GET /api/stats/public` from here to badge what
+was trending, which meant the root domain made a cross-origin call to an app
+subdomain to draw itself. Both endpoints are the landing service's own now, so
+that dependency is simply gone rather than made weaker.
+
+The old arrangement was careful about it — the script ran after paint, caught
+everything, and the authored card order was already right when no stats
+arrived, so a cold Spellbook never showed on the root domain. That care is
+worth keeping if anything here is ever called from the landing page again; it
+is the only thing that makes a static page calling a service acceptable.
 
 ## Running it locally
 
