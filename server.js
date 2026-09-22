@@ -99,6 +99,28 @@ identity.meter(anthropic);
 const analytics = createAnalytics({ db, requireAdmin, requireLogin });
 analytics.mount(app);
 
+/**
+ * An AI call needs the SHARED account, not just a Spellbook login.
+ *
+ * This is the piece that makes the move off requireAiAccess safe rather than
+ * a widening. identity.requireBudget deliberately waves through a request
+ * with no identity session - most apps here are readable signed-out and it
+ * must not 402 a passer-by - so on its own it would have let any registered
+ * Spellbook user run Opus 5 unmetered, which is looser than the approval
+ * list it replaced, not tighter.
+ *
+ * Spellbook's own sign-in carries no balance and never will: the ledger lives
+ * on the shared account. So the honest answer to "can this person spend" is
+ * "not until we know who they are across the domain".
+ */
+function requireSharedAccount(req, res, next) {
+  if (req.user) return next();
+  return res.status(401).json({
+    error: 'Sign in with your account for all the apps to use Claude here.',
+    accountUrl: 'https://acct.strongtechnicalconsulting.com',
+  });
+}
+
 function requireLoginOrCron(req, res, next) {
   const key = req.get('X-Cron-Key');
   if (CRON_SECRET && key && key === CRON_SECRET) {
@@ -512,7 +534,7 @@ async function proposePrompt(userText) {
 // call never sits behind a login alone - it goes behind requireBudget AND
 // requireDailyCap, so what bounds the spend is a dollar figure rather than
 // somebody's memory of who they said yes to.
-app.post('/api/ai/draft', requireLogin, identity.requireBudget, identity.requireDailyCap,
+app.post('/api/ai/draft', requireLogin, requireSharedAccount, identity.requireBudget, identity.requireDailyCap,
   async (req, res) => {
   try {
     const want = clean((req.body || {}).description, 1500);
@@ -533,7 +555,7 @@ app.post('/api/ai/draft', requireLogin, identity.requireBudget, identity.require
 // Critique and tighten an existing prompt. Readable by anyone who can see the
 // prompt — you may want to improve someone else's into a remix of your own —
 // but it writes nothing either way.
-app.post('/api/prompts/:id/improve', requireLogin, identity.requireBudget, identity.requireDailyCap,
+app.post('/api/prompts/:id/improve', requireLogin, requireSharedAccount, identity.requireBudget, identity.requireDailyCap,
   async (req, res) => {
   const found = await loadVisiblePrompt(req, res);
   if (!found) return;
