@@ -41,6 +41,8 @@ const APPS = {
   // field is metadata in the stats payload, not the beacon target, so the
   // mismatch costs nothing while it lasts.
   spellbook: { label: 'Spellbook', url: 'https://spellbook.strongtechnicalconsulting.com', icon: '✨' },
+  dataviz:   { label: 'DataViz', url: 'https://dataviz.strongtechnicalconsulting.com', icon: '\u{1F4CA}' },
+  friction:  { label: 'Friction', url: 'https://friction.strongtechnicalconsulting.com', icon: '\u{1F9ED}' },
 };
 
 const VISITOR_COOKIE = 'sbvid';
