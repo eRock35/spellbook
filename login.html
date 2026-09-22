@@ -83,6 +83,22 @@
       <button class="linkish" id="toggleMode">Need an account? Create one</button>
       <div class="status" id="status"></div>
     </div>
+
+    <!-- The account that covers every app on this domain. Offered BESIDE
+         Spellbook's own sign-in, not instead of it: the original door keeps
+         working and nobody is signed out by its arrival. Both derive the same
+         uid from the same email, so it is the same person and the same
+         library either way. -->
+    <div class="card" style="margin-top:14px;">
+      <div class="divider">or use your account for all the apps</div>
+      <label for="su">Email</label>
+      <input id="su" type="email" autocomplete="username" autocapitalize="none" autocorrect="off" />
+      <label for="sp">Password</label>
+      <input id="sp" type="password" autocomplete="current-password" />
+      <button class="primary" id="sharedBtn">Sign in</button>
+      <p class="hint">This one also carries your AI credit and your passkey, because those live on the account rather than in any one app.</p>
+      <div class="status" id="sharedStatus"></div>
+    </div>
   </div>
 
 <script>
@@ -236,6 +252,27 @@
   document.getElementById('pwBtn').addEventListener('click', submitPassword);
   document.getElementById('p').addEventListener('keydown', function(e){
     if (e.key === 'Enter'){ e.preventDefault(); submitPassword(); }
+  });
+
+  // The shared account. Posts to /api/id/login, which is the identity module
+  // mounted in this app - not Spellbook's own accounts.
+  var sharedBtn = document.getElementById('sharedBtn');
+  if (sharedBtn) sharedBtn.addEventListener('click', function(){
+    var st = document.getElementById('sharedStatus');
+    var email = (document.getElementById('su').value || '').trim();
+    var password = document.getElementById('sp').value || '';
+    if (!email || !password){ st.textContent = 'Email and password, please.'; return; }
+    sharedBtn.disabled = true;
+    st.textContent = 'Signing in\u2026';
+    fetch('/api/id/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email: email, password: password })
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok) throw new Error(d.error || 'That did not work.');
+        window.location.replace('/');
+      });
+    }).catch(function(e){ st.textContent = e.message; sharedBtn.disabled = false; });
   });
 })();
 </script>

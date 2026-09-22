@@ -90,9 +90,68 @@ const identity = identityLib.create({
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 
+/**
+ * Both doors, in the order that makes the shared one actually work.
+ *
+ * identity.mount() installs its own attachUser with app.use(), and a use()
+ * registered AFTER a get() never runs for that route. Mounting identity below
+ * accounts.mount() therefore left /api/auth/me reading only Spellbook's own
+ * cookie: someone holding a perfectly good shared session was told
+ * `signedIn: false` and the page bounced them to /login. Hence attachUser
+ * here, before any route is registered.
+ *
+ * The shared account WINS when both are present - identity's attachUser only
+ * assigns when it finds a session of its own, so this is an overwrite, not a
+ * merge, and the bridge below puts the two shapes back together.
+ */
 app.use(accounts.attachUser);
+app.use(identity.attachUser);
+
+/**
+ * One user shape, whichever door they came through.
+ *
+ * The two systems derive a uid identically - base64url of the lowercased
+ * email - so a shared-account session names exactly the same person as a
+ * Spellbook one. Their prompts, votes and saves are already keyed to it;
+ * nothing needs migrating and nobody's library moves.
+ *
+ * identity's fields are spread LAST on purpose: it owns entitlements, so
+ * spentUsd, plan and byok must come from the shared record and not from a
+ * stale local copy - the same rule DataViz learned the hard way.
+ */
+async function bridgeSharedAccount(req, _res, next) {
+  const u = req.user;
+  // Signed out, or in through Spellbook's own door: already the right shape.
+  if (!u || u.uid) return next();
+  const uid = u.id;
+  let own = null;
+  try {
+    const d = await db.collection('users').doc(uid).get();
+    own = d.exists ? d.data() : null;
+  } catch (e) { own = null; }
+  req.user = Object.assign({}, own || {}, u, {
+    uid,
+    displayName: (own && own.displayName) || u.displayName || u.email,
+    // The owner flag can come from either side. Identity's `admin` is the
+    // domain-wide one; a local isAdmin predates it and still stands.
+    isAdmin: u.admin === true || !!(own && own.isAdmin),
+    sharedAccount: true,
+  });
+  next();
+}
+app.use(bridgeSharedAccount);
+
 accounts.mount(app);
 identity.mount(app);
+// Again, deliberately. identity.mount() installs its OWN attachUser, which
+// reassigns req.user to the raw identity shape - no uid, no sharedAccount -
+// for every route registered after this line, which is most of this file.
+// Bridging once before the mounts fixes the account routes; bridging again
+// here fixes the library and the AI routes. Found by a test that signed in
+// through the shared door and was then told to sign in through the shared
+// door.
+app.use(bridgeSharedAccount);
+
 // Price and record every model call this app makes.
 identity.meter(anthropic);
 
@@ -114,7 +173,9 @@ analytics.mount(app);
  * "not until we know who they are across the domain".
  */
 function requireSharedAccount(req, res, next) {
-  if (req.user) return next();
+  // Specifically the shared door. req.user is truthy for a Spellbook-only
+  // login as well, and that one carries no balance.
+  if (req.user && req.user.sharedAccount) return next();
   return res.status(401).json({
     error: 'Sign in with your account for all the apps to use Claude here.',
     accountUrl: 'https://acct.strongtechnicalconsulting.com',
