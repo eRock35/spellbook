@@ -1,0 +1,912 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Spellbook</title>
+<style>
+  :root{
+    --bg:#F2F2F7; --card:#FFFFFF; --fill:rgba(120,120,128,0.12); --fill-2:rgba(120,120,128,0.18);
+    --label:#000; --label-2:rgba(60,60,67,0.6); --label-3:rgba(60,60,67,0.4);
+    --sep:rgba(60,60,67,0.29);
+    --tint:#5856D6; --red:#FF3B30; --orange:#FF9500; --green:#34C759;
+    --shadow:0 1px 2px rgba(0,0,0,.04), 0 10px 24px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#000; --card:#1C1C1E; --fill:rgba(120,120,128,0.24); --fill-2:rgba(120,120,128,0.34);
+      --label:#fff; --label-2:rgba(235,235,245,0.6); --label-3:rgba(235,235,245,0.4);
+      --sep:rgba(84,84,88,0.65);
+      --tint:#7D7AFF; --red:#FF453A; --orange:#FF9F0A; --green:#32D74B;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 24px rgba(0,0,0,.45);
+    }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    background:var(--bg); color:var(--label); margin:0; min-height:100%;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;
+    padding-inline:16px; padding-block:20px 100px; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:680px; margin:0 auto; display:flex; flex-direction:column; gap:16px;}
+  .title-block{display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:2px 2px 0;}
+  .eyebrow{font-size:13px; font-weight:600; color:var(--tint); text-transform:uppercase; letter-spacing:.02em; margin:0 0 2px;}
+  h1{font-size:28px; font-weight:700; letter-spacing:-.02em; margin:0; line-height:1.1;}
+  h1 .glyph{font-size:24px;}
+  .sub{color:var(--label-2); font-size:13.5px; margin:4px 0 0;}
+  .section-header{font-size:13px; font-weight:600; color:var(--label-2); text-transform:uppercase; letter-spacing:.02em; margin:4px 4px 0;}
+  .card{background:var(--card); border-radius:18px; box-shadow:var(--shadow); overflow:hidden;}
+  .card-pad{padding:16px 18px;}
+  p{margin:0 0 8px; font-size:15px; line-height:1.45;} p:last-child{margin-bottom:0;}
+  .muted{color:var(--label-2); font-size:13px;}
+  a{color:var(--tint);}
+
+  input,textarea,select{
+    width:100%; font:inherit; font-size:16px; padding:10px 12px; border-radius:10px;
+    border:1px solid var(--sep); background:var(--fill); color:var(--label);
+  }
+  textarea{min-height:130px; resize:vertical; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:14px; line-height:1.5;}
+  select{appearance:none; background-image:none;}
+  label{display:block; font-size:13px; color:var(--label-2); margin:0 2px 4px;}
+  .field{margin-bottom:12px;}
+  .row{display:flex; gap:10px;} .row > *{flex:1; min-width:0;}
+  .btn{font:inherit; font-weight:600; font-size:15px; border:none; border-radius:12px; padding:11px 15px; cursor:pointer;}
+  .btn-primary{background:var(--tint); color:#fff;} .btn-primary:disabled{opacity:.5; cursor:default;}
+  .btn-ghost{background:var(--fill); color:var(--label);}
+  .btn-danger{background:none; color:var(--red);}
+  .btn-wide{width:100%;}
+  .icon-btn{width:36px; height:36px; border-radius:50%; border:none; background:var(--fill); color:var(--tint);
+    font-size:19px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
+  .back-btn{background:none; border:none; color:var(--tint); font:inherit; font-size:15px; font-weight:600; padding:4px 0; cursor:pointer;}
+
+  /* toolbar: filters in one row above the list */
+  .toolbar{display:flex; flex-direction:column; gap:10px;}
+  .segmented{display:flex; background:var(--fill); border-radius:10px; padding:2px; gap:2px;}
+  .segmented button{flex:1; border:none; background:none; color:var(--label-2); font:inherit; font-size:13px;
+    font-weight:600; padding:7px 4px; border-radius:8px; cursor:pointer;}
+  .segmented button[aria-pressed="true"]{background:var(--card); color:var(--label); box-shadow:0 1px 2px rgba(0,0,0,.12);}
+
+  /* prompt cards */
+  .plist{display:flex; flex-direction:column; gap:10px;}
+  .pcard{background:var(--card); border-radius:16px; box-shadow:var(--shadow); padding:14px 16px; display:flex; gap:12px; align-items:flex-start;}
+  .votecol{display:flex; flex-direction:column; align-items:center; gap:1px; flex:0 0 auto; width:38px;}
+  .votebtn{border:none; background:none; color:var(--label-3); font-size:17px; line-height:1; padding:3px 6px; cursor:pointer; border-radius:8px;}
+  .votebtn:hover{background:var(--fill);}
+  .votebtn[aria-pressed="true"].up{color:var(--green);}
+  .votebtn[aria-pressed="true"].down{color:var(--red);}
+  .votenum{font-size:14px; font-weight:700; font-variant-numeric:tabular-nums;}
+  .pbody{flex:1; min-width:0; text-align:left;}
+  .ptitle{margin:0 0 3px; font-size:16.5px; font-weight:700; letter-spacing:-.01em; cursor:pointer;}
+  .pmeta{font-size:12.5px; color:var(--label-2); display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:6px; align-items:center;}
+  .chips{display:flex; flex-wrap:wrap; gap:5px; margin-top:8px;}
+  .chip{display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; letter-spacing:.02em;
+    text-transform:uppercase; border-radius:999px; padding:3px 8px; background:var(--fill); color:var(--label-2);}
+  .chip.plat{background:rgba(88,86,214,.14); color:var(--tint);}
+  .chip.tag{text-transform:none; letter-spacing:0; font-weight:600;}
+  .chip.priv{background:rgba(255,149,0,.16); color:var(--orange);}
+  .chipbtn{border:none; cursor:pointer; font:inherit;}
+
+  /* detail */
+  pre.promptbody{
+    margin:0; padding:14px; background:var(--fill); border-radius:12px; white-space:pre-wrap; word-break:break-word;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13.5px; line-height:1.55; max-height:420px; overflow:auto;
+  }
+  .varbox{background:var(--fill); border-radius:12px; padding:12px 14px; margin-top:12px;}
+  .actions{display:flex; gap:8px; flex-wrap:wrap; margin-top:14px;}
+  .stat-row{display:flex; gap:14px; flex-wrap:wrap; font-size:13px; color:var(--label-2); margin-top:10px;}
+  .stat-row b{color:var(--label); font-variant-numeric:tabular-nums;}
+
+  .banner{border-radius:14px; padding:12px 14px; font-size:13.5px; line-height:1.45;}
+  .banner.warn{background:rgba(255,149,0,.14); color:var(--label);}
+  .banner.err{background:rgba(255,59,48,.14); color:var(--label);}
+  .banner.ok{background:rgba(52,199,89,.14); color:var(--label);}
+  .proposal{border:2px dashed var(--tint); border-radius:16px; padding:14px 16px; background:var(--card);}
+  .checkline{display:flex; align-items:center; gap:8px; font-size:14px; margin:0 0 8px;}
+  .checkline input{width:auto; margin:0;}
+  .authbar{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; color:var(--label-2);
+    background:var(--card); border-radius:14px; padding:10px 14px; box-shadow:var(--shadow);}
+  .authbar .who{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .linkbtn{background:none; border:none; color:var(--tint); font:inherit; font-size:13px; font-weight:600; cursor:pointer; padding:2px 0;}
+  .spinner{display:inline-block; width:14px; height:14px; border:2px solid var(--fill-2); border-top-color:var(--tint);
+    border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="title-block">
+    <div>
+      <p class="eyebrow">strongtechnicalconsulting.com</p>
+      <h1><span class="glyph">&#10024;</span> Spellbook</h1>
+      <p class="sub">Prompts worth keeping — shared, voted on, and remixed.</p>
+    </div>
+    <button class="icon-btn" id="newBtn" title="New prompt" aria-label="New prompt">+</button>
+  </div>
+
+  <div class="authbar" id="authbar" hidden>
+    <span class="who" id="who"></span>
+    <span style="display:flex; gap:12px; flex:0 0 auto;">
+      <a class="linkbtn" href="/dashboard.html" id="dashLink" hidden style="text-decoration:none;">Analytics</a>
+      <button class="linkbtn" id="acctBtn">Account</button>
+      <button class="linkbtn" id="outBtn">Sign out</button>
+    </span>
+  </div>
+
+  <div class="banner warn" id="aiBanner" hidden></div>
+
+  <!-- ============ LIST VIEW ============ -->
+  <section id="listView">
+    <div class="toolbar" style="margin-bottom:14px;">
+      <input id="q" type="search" placeholder="Search prompts…" autocomplete="off">
+      <div class="segmented" id="sortSeg" role="group" aria-label="Sort">
+        <button data-sort="trending" aria-pressed="true">Trending</button>
+        <button data-sort="top" aria-pressed="false">Top</button>
+        <button data-sort="new" aria-pressed="false">New</button>
+        <button data-sort="copied" aria-pressed="false">Most used</button>
+      </div>
+      <div class="row">
+        <select id="platformSel" aria-label="Filter by platform"></select>
+        <select id="categorySel" aria-label="Filter by category"></select>
+      </div>
+      <div class="segmented" id="scopeSeg" role="group" aria-label="Which prompts">
+        <button data-scope="all" aria-pressed="true">Everyone's</button>
+        <button data-scope="mine" aria-pressed="false">Mine</button>
+        <button data-scope="saved" aria-pressed="false">Saved</button>
+      </div>
+    </div>
+    <div class="plist" id="plist"></div>
+    <p class="muted" id="listNote" style="margin-top:14px; text-align:center;"></p>
+  </section>
+
+  <!-- ============ DETAIL VIEW ============ -->
+  <section id="detailView" hidden>
+    <button class="back-btn" id="detailBack">&#8249; All prompts</button>
+    <div class="card card-pad" style="margin-top:10px;">
+      <h2 id="dTitle" style="margin:0 0 4px; font-size:21px; letter-spacing:-.02em;"></h2>
+      <p class="muted" id="dSummary" style="margin-bottom:10px;"></p>
+      <div class="chips" id="dChips"></div>
+      <div class="stat-row" id="dStats"></div>
+      <p class="muted" id="dRemix" style="margin-top:10px;" hidden></p>
+    </div>
+
+    <div class="section-header" style="margin-top:18px;">The prompt</div>
+    <div class="card card-pad" style="margin-top:8px;">
+      <div class="varbox" id="dVarBox" hidden>
+        <p class="muted" style="margin-bottom:10px;">Fill these in and the copy button gives you the finished prompt.</p>
+        <div id="dVarFields"></div>
+      </div>
+      <pre class="promptbody" id="dBody" style="margin-top:12px;"></pre>
+      <div class="actions">
+        <button class="btn btn-primary" id="dCopy">Copy prompt</button>
+        <button class="btn btn-ghost" id="dSave">Save</button>
+        <button class="btn btn-ghost" id="dRemixBtn">Remix</button>
+        <button class="btn btn-ghost" id="dImprove">Improve with Claude</button>
+        <button class="btn btn-ghost" id="dEdit" hidden>Edit</button>
+        <button class="btn btn-danger" id="dDelete" hidden>Delete</button>
+      </div>
+      <p class="muted" id="dStatus" style="margin-top:10px;"></p>
+    </div>
+
+    <div id="dProposalWrap" hidden style="margin-top:14px;">
+      <div class="proposal">
+        <div class="section-header" style="margin:0 0 8px;">Claude suggests</div>
+        <p class="muted" id="pNotes"></p>
+        <p style="font-weight:700; margin:10px 0 2px;" id="pTitle"></p>
+        <p class="muted" id="pSummary"></p>
+        <pre class="promptbody" id="pBody" style="margin-top:10px;"></pre>
+        <div class="actions">
+          <button class="btn btn-primary" id="pApply">Apply</button>
+          <button class="btn btn-ghost" id="pDiscard">Discard</button>
+        </div>
+        <p class="muted" id="pHint" style="margin-top:10px;"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EDITOR VIEW ============ -->
+  <section id="editView" hidden>
+    <button class="back-btn" id="editBack">&#8249; Cancel</button>
+    <div class="section-header" style="margin-top:10px;" id="editHeading">New prompt</div>
+
+    <div class="card card-pad" style="margin-top:8px;" id="aiDraftCard">
+      <p class="muted" style="margin-bottom:10px;">Don't want to start from a blank box? Describe what you need and Claude will draft it.</p>
+      <div class="field"><input id="draftWant" placeholder="e.g. a code review prompt that checks for race conditions"></div>
+      <button class="btn btn-ghost btn-wide" id="draftBtn">Draft with Claude</button>
+    </div>
+
+    <div id="eProposalWrap" hidden style="margin-top:14px;">
+      <div class="proposal">
+        <div class="section-header" style="margin:0 0 8px;">Claude drafted this</div>
+        <p class="muted" id="epNotes"></p>
+        <pre class="promptbody" id="epBody" style="margin-top:10px;"></pre>
+        <div class="actions">
+          <button class="btn btn-primary" id="epApply">Use it</button>
+          <button class="btn btn-ghost" id="epDiscard">Discard</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card card-pad" style="margin-top:14px;">
+      <div class="field"><label for="eTitle">Title</label><input id="eTitle" maxlength="120" placeholder="What does this prompt do?"></div>
+      <div class="field"><label for="eSummary">One-line summary <span style="opacity:.6">(optional)</span></label><input id="eSummary" maxlength="240"></div>
+      <div class="field">
+        <label for="eBody">The prompt</label>
+        <textarea id="eBody" placeholder="Paste the prompt. Wrap anything the reader should fill in like {{this}} — Spellbook turns those into a form."></textarea>
+        <p class="muted" id="eVarNote" style="margin-top:6px;"></p>
+      </div>
+      <div class="field">
+        <label>Platforms it's written for</label>
+        <div class="chips" id="ePlatforms"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="eCategory">Category</label><select id="eCategory"></select></div>
+        <div class="field"><label for="eModels">Models <span style="opacity:.6">(optional)</span></label><input id="eModels" placeholder="opus 5, gpt-5"></div>
+      </div>
+      <div class="field"><label for="eTags">Tags <span style="opacity:.6">(optional, comma separated)</span></label><input id="eTags" placeholder="refactoring, tests"></div>
+      <p class="checkline"><input type="checkbox" id="ePrivate"><label for="ePrivate" style="margin:0;">Keep this private (only you can see it)</label></p>
+      <button class="btn btn-primary btn-wide" id="eSaveBtn">Publish prompt</button>
+      <p class="muted" id="eStatus" style="margin-top:10px;"></p>
+    </div>
+  </section>
+
+  <!-- ============ ACCOUNT VIEW ============ -->
+  <section id="acctView" hidden>
+    <button class="back-btn" id="acctBack">&#8249; Back</button>
+    <div class="section-header" style="margin-top:10px;">Account</div>
+    <div class="card card-pad" style="margin-top:8px;">
+      <p id="aWho"></p>
+      <p class="muted" id="aAi"></p>
+      <div id="aRequestWrap" style="margin-top:12px;">
+        <div class="field"><label for="aNote">Why you'd like AI access <span style="opacity:.6">(optional)</span></label><input id="aNote" maxlength="500"></div>
+        <button class="btn btn-ghost btn-wide" id="aRequestBtn">Request AI access</button>
+      </div>
+    </div>
+
+    <div class="section-header" style="margin-top:18px;">Face ID / Touch ID</div>
+    <div class="card card-pad" style="margin-top:8px;">
+      <p class="muted">Add a passkey on this device so you can sign in without typing a password — and reset your own password if you ever forget it.</p>
+      <button class="btn btn-ghost btn-wide" id="aPasskeyBtn" style="margin-top:10px;">Add a passkey</button>
+      <p class="muted" id="aPasskeyStatus" style="margin-top:8px;"></p>
+    </div>
+
+    <div class="section-header" style="margin-top:18px;">Change password</div>
+    <div class="card card-pad" style="margin-top:8px;">
+      <div class="field"><label for="aCur">Current password</label><input id="aCur" type="password" autocomplete="current-password"></div>
+      <div class="field"><label for="aNew">New password (10+ characters)</label><input id="aNew" type="password" autocomplete="new-password"></div>
+      <button class="btn btn-ghost btn-wide" id="aPwBtn">Change password</button>
+      <p class="muted" id="aPwStatus" style="margin-top:8px;"></p>
+    </div>
+
+    <div id="adminWrap" hidden>
+      <div class="section-header" style="margin-top:18px;">Admin &middot; pending requests</div>
+      <div class="card card-pad" style="margin-top:8px;" id="adminList"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var PLATFORM_LABELS = {
+    'claude':'Claude', 'claude-code':'Claude Code', 'chatgpt':'ChatGPT', 'gemini':'Gemini',
+    'copilot':'Copilot', 'cursor':'Cursor', 'perplexity':'Perplexity', 'grok':'Grok',
+    'midjourney':'Midjourney', 'api':'API / SDK', 'local':'Local model', 'other':'Other'
+  };
+  var CATEGORY_LABELS = {
+    'coding':'Coding', 'writing':'Writing', 'research':'Research', 'analysis':'Analysis',
+    'image':'Image', 'agents':'Agents', 'productivity':'Productivity', 'learning':'Learning',
+    'fun':'Fun', 'other':'Other'
+  };
+
+  var state = {
+    me: null, sort: 'trending', scope: 'all', q: '', platform: '', category: '',
+    list: [], mine: [], saved: [], current: null, proposal: null, editing: null, remixOf: null
+  };
+
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmt(n){ return (n || 0).toLocaleString(); }
+  function ago(iso){
+    if (!iso) return '';
+    var s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (s < 3600) return Math.round(s/60) + 'm ago';
+    if (s < 86400) return Math.round(s/3600) + 'h ago';
+    if (s < 2592000) return Math.round(s/86400) + 'd ago';
+    return new Date(iso).toLocaleDateString(undefined, {month:'short', day:'numeric'});
+  }
+
+  function api(path, opts){
+    opts = opts || {};
+    if (opts.body && typeof opts.body !== 'string'){
+      opts.headers = Object.assign({'Content-Type':'application/json'}, opts.headers||{});
+      opts.body = JSON.stringify(opts.body);
+    }
+    return fetch(path, opts).then(function(r){
+      if (r.status === 401){ window.location.replace('/login'); throw new Error('signed out'); }
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok) throw new Error(d.error || ('Request failed (' + r.status + ')'));
+        return d;
+      });
+    });
+  }
+
+  function show(which){
+    ['listView','detailView','editView','acctView'].forEach(function(v){ $(v).hidden = (v !== which); });
+    window.scrollTo(0, 0);
+  }
+
+  // ---- beacon: this app counts its own views, same as the others ----------
+  function beacon(){
+    try {
+      fetch('/api/beacon', {
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+        keepalive:true,
+        body: JSON.stringify({ app:'spellbook', path: location.pathname, ref: document.referrer || '' })
+      }).catch(function(){});
+    } catch(e){}
+  }
+
+  // ---- auth bar ----------------------------------------------------------
+  function paintMe(){
+    var me = state.me;
+    $('authbar').hidden = !me;
+    if (!me) return;
+    $('who').textContent = me.displayName || me.email;
+    $('dashLink').hidden = false;
+    var b = $('aiBanner');
+    if (me.mustChangePassword){
+      b.hidden = false; b.className = 'banner err';
+      b.textContent = 'You are signed in with a temporary password. Set a new one under Account.';
+    } else if (me.aiAccess === 'approved'){
+      b.hidden = true;
+    } else if (me.aiAccess === 'pending'){
+      b.hidden = false; b.className = 'banner warn';
+      b.textContent = 'AI access requested — the admin reviews each one by hand. Everything else works now.';
+    } else if (me.aiAccess === 'denied'){
+      b.hidden = false; b.className = 'banner warn';
+      b.textContent = 'AI access was declined. You can still publish, vote, save and remix prompts.';
+    } else {
+      b.hidden = false; b.className = 'banner warn';
+      b.innerHTML = 'Drafting and improving prompts with Claude needs approval (it spends API tokens). ' +
+        '<button class="linkbtn" id="bannerAsk">Request access</button>';
+      var ask = $('bannerAsk');
+      if (ask) ask.addEventListener('click', function(){ openAccount(); });
+    }
+  }
+
+  // ---- list --------------------------------------------------------------
+  function platformChips(p){
+    return (p.platforms || []).map(function(x){
+      return '<span class="chip plat">' + esc(PLATFORM_LABELS[x] || x) + '</span>';
+    }).join('');
+  }
+
+  function cardHtml(p){
+    // You cannot vote on your own prompt (the API rejects it), so don't offer
+    // the control — a button that always errors is worse than no button.
+    var mine = p.isMine || (state.me && p.authorId === state.me.id);
+    var chips = platformChips(p)
+      + '<span class="chip">' + esc(CATEGORY_LABELS[p.category] || p.category) + '</span>'
+      + (p.visibility === 'private' ? '<span class="chip priv">Private</span>' : '')
+      + (p.variables && p.variables.length ? '<span class="chip">' + p.variables.length + ' blank' + (p.variables.length>1?'s':'') + '</span>' : '')
+      + (p.tags || []).map(function(t){ return '<span class="chip tag">#' + esc(t) + '</span>'; }).join('');
+    return '<div class="pcard" data-id="' + esc(p.id) + '">'
+      + '<div class="votecol">'
+      +   (mine ? '' : '<button class="votebtn up" data-vote="1" aria-pressed="' + (p.myVote === 1) + '" aria-label="Upvote">&#9650;</button>')
+      +   '<span class="votenum">' + fmt(p.score) + '</span>'
+      +   (mine ? '<span class="muted" style="font-size:10px; text-align:center; line-height:1.2;">yours</span>'
+              : '<button class="votebtn down" data-vote="-1" aria-pressed="' + (p.myVote === -1) + '" aria-label="Downvote">&#9660;</button>')
+      + '</div>'
+      + '<div class="pbody">'
+      +   '<h3 class="ptitle" data-open="1">' + esc(p.title) + '</h3>'
+      +   (p.summary ? '<div class="muted">' + esc(p.summary) + '</div>' : '')
+      +   '<div class="chips">' + chips + '</div>'
+      +   '<div class="pmeta">'
+      +     '<span>' + esc(p.authorName) + '</span>'
+      +     '<span>' + ago(p.createdAt) + '</span>'
+      +     '<span>' + fmt(p.copyCount) + ' copied</span>'
+      +     (p.saved ? '<span style="color:var(--tint); font-weight:600;">Saved</span>' : '')
+      +   '</div>'
+      + '</div></div>';
+  }
+
+  function renderList(){
+    var rows = state.scope === 'mine' ? state.mine : (state.scope === 'saved' ? state.saved : state.list);
+    var host = $('plist');
+    if (!rows.length){
+      host.innerHTML = '<div class="card card-pad"><p class="muted">'
+        + (state.scope === 'all' ? 'Nothing here yet. Tap + to publish the first prompt.'
+           : state.scope === 'mine' ? "You haven't published a prompt yet."
+           : "You haven't saved anyone's prompt yet.")
+        + '</p></div>';
+      $('listNote').textContent = '';
+      return;
+    }
+    host.innerHTML = rows.map(cardHtml).join('');
+    $('listNote').textContent = rows.length + ' prompt' + (rows.length === 1 ? '' : 's');
+  }
+
+  function loadList(){
+    var qs = new URLSearchParams({ sort: state.sort });
+    if (state.q) qs.set('q', state.q);
+    if (state.platform) qs.set('platform', state.platform);
+    if (state.category) qs.set('category', state.category);
+    $('plist').innerHTML = '<div class="card card-pad"><p class="muted"><span class="spinner"></span> Loading…</p></div>';
+    return api('/api/prompts?' + qs.toString()).then(function(d){
+      state.list = d.prompts || [];
+      renderList();
+    }).catch(function(e){
+      $('plist').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>';
+    });
+  }
+
+  function loadMine(){
+    return api('/api/my/prompts').then(function(d){
+      state.mine = d.mine || []; state.saved = d.saved || [];
+      if (state.scope !== 'all') renderList();
+    }).catch(function(){});
+  }
+
+  // ---- detail ------------------------------------------------------------
+  function openPrompt(id){
+    show('detailView');
+    $('dTitle').textContent = 'Loading…';
+    $('dBody').textContent = '';
+    $('dChips').innerHTML = ''; $('dStats').innerHTML = '';
+    $('dProposalWrap').hidden = true; state.proposal = null;
+    api('/api/prompts/' + encodeURIComponent(id)).then(function(p){
+      state.current = p;
+      paintDetail();
+    }).catch(function(e){ $('dTitle').textContent = e.message; });
+  }
+
+  function paintDetail(){
+    var p = state.current;
+    $('dTitle').textContent = p.title;
+    $('dSummary').textContent = p.summary || '';
+    $('dSummary').hidden = !p.summary;
+    $('dChips').innerHTML = platformChips(p)
+      + '<span class="chip">' + esc(CATEGORY_LABELS[p.category] || p.category) + '</span>'
+      + (p.visibility === 'private' ? '<span class="chip priv">Private</span>' : '')
+      + (p.models || []).map(function(m){ return '<span class="chip tag">' + esc(m) + '</span>'; }).join('')
+      + (p.tags || []).map(function(t){ return '<span class="chip tag">#' + esc(t) + '</span>'; }).join('');
+    $('dStats').innerHTML = '<span>by <b>' + esc(p.authorName) + '</b></span>'
+      + '<span><b>' + fmt(p.score) + '</b> score</span>'
+      + '<span><b>' + fmt(p.copyCount) + '</b> copied</span>'
+      + '<span><b>' + fmt(p.saveCount) + '</b> saved</span>'
+      + '<span><b>' + fmt(p.remixCount) + '</b> remixes</span>'
+      + '<span>' + ago(p.createdAt) + '</span>';
+    if (p.remixOf){
+      $('dRemix').hidden = false;
+      $('dRemix').innerHTML = 'Remixed from <button class="linkbtn" id="remixLink">'
+        + esc(p.remixOf.title) + '</button> by ' + esc(p.remixOf.authorName);
+      $('remixLink').addEventListener('click', function(){ openPrompt(p.remixOf.id); });
+    } else { $('dRemix').hidden = true; }
+
+    // Variable form. This is the reason to have a library rather than a notes
+    // app: the reader fills blanks instead of hand-editing prose.
+    var vars = p.variables || [];
+    $('dVarBox').hidden = !vars.length;
+    $('dVarFields').innerHTML = vars.map(function(v, i){
+      return '<div class="field"><label for="var' + i + '">' + esc(v) + '</label>'
+        + '<input id="var' + i + '" data-var="' + esc(v) + '" placeholder="' + esc(v) + '"></div>';
+    }).join('');
+    Array.prototype.forEach.call($('dVarFields').querySelectorAll('input'), function(inp){
+      inp.addEventListener('input', paintBody);
+    });
+    paintBody();
+
+    $('dSave').textContent = p.saved ? 'Saved ✓' : 'Save';
+    $('dEdit').hidden = !p.isMine;
+    $('dDelete').hidden = !p.isMine;
+    $('dImprove').hidden = false;
+    $('dStatus').textContent = '';
+  }
+
+  function filledBody(){
+    var p = state.current, body = p.body;
+    Array.prototype.forEach.call($('dVarFields').querySelectorAll('input'), function(inp){
+      var val = inp.value.trim();
+      if (!val) return;
+      var name = inp.getAttribute('data-var').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      body = body.replace(new RegExp('\\{\\{\\s*' + name + '\\s*\\}\\}', 'g'), val);
+    });
+    return body;
+  }
+  function paintBody(){ $('dBody').textContent = filledBody(); }
+
+  function copyText(text){
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      return navigator.clipboard.writeText(text);
+    }
+    // Safari on an older iOS, and any non-secure context, has no clipboard API.
+    return new Promise(function(resolve, reject){
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('Copy is not available — select the text instead.'));
+    });
+  }
+
+  // ---- editor ------------------------------------------------------------
+  function buildEditorChoices(){
+    $('ePlatforms').innerHTML = Object.keys(PLATFORM_LABELS).map(function(k){
+      return '<button type="button" class="chip chipbtn" data-plat="' + k + '" aria-pressed="false">'
+        + esc(PLATFORM_LABELS[k]) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('ePlatforms').querySelectorAll('button'), function(b){
+      b.addEventListener('click', function(){
+        var on = b.getAttribute('aria-pressed') === 'true';
+        b.setAttribute('aria-pressed', on ? 'false' : 'true');
+        b.classList.toggle('plat', !on);
+      });
+    });
+    $('eCategory').innerHTML = Object.keys(CATEGORY_LABELS).map(function(k){
+      return '<option value="' + k + '">' + esc(CATEGORY_LABELS[k]) + '</option>';
+    }).join('');
+    $('platformSel').innerHTML = '<option value="">Any platform</option>'
+      + Object.keys(PLATFORM_LABELS).map(function(k){
+        return '<option value="' + k + '">' + esc(PLATFORM_LABELS[k]) + '</option>'; }).join('');
+    $('categorySel').innerHTML = '<option value="">Any category</option>'
+      + Object.keys(CATEGORY_LABELS).map(function(k){
+        return '<option value="' + k + '">' + esc(CATEGORY_LABELS[k]) + '</option>'; }).join('');
+  }
+
+  function selectedPlatforms(){
+    return Array.prototype.filter.call($('ePlatforms').querySelectorAll('button'), function(b){
+      return b.getAttribute('aria-pressed') === 'true';
+    }).map(function(b){ return b.getAttribute('data-plat'); });
+  }
+  function setPlatforms(list){
+    Array.prototype.forEach.call($('ePlatforms').querySelectorAll('button'), function(b){
+      var on = (list || []).indexOf(b.getAttribute('data-plat')) !== -1;
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      b.classList.toggle('plat', on);
+    });
+  }
+
+  function openEditor(mode, source){
+    show('editView');
+    state.editing = (mode === 'edit') ? source : null;
+    state.remixOf = (mode === 'remix') ? source.id : null;
+    $('editHeading').textContent = mode === 'edit' ? 'Edit prompt'
+      : mode === 'remix' ? 'Remix of "' + source.title + '"' : 'New prompt';
+    $('eSaveBtn').textContent = mode === 'edit' ? 'Save changes' : 'Publish prompt';
+    $('aiDraftCard').hidden = (mode === 'edit');
+    $('eProposalWrap').hidden = true;
+    var s = source || {};
+    $('eTitle').value = mode === 'remix' ? (s.title ? s.title + ' (remix)' : '') : (s.title || '');
+    $('eSummary').value = s.summary || '';
+    $('eBody').value = s.body || '';
+    $('eModels').value = (s.models || []).join(', ');
+    $('eTags').value = (s.tags || []).join(', ');
+    $('eCategory').value = s.category || 'coding';
+    $('ePrivate').checked = s.visibility === 'private';
+    setPlatforms(s.platforms || []);
+    $('eStatus').textContent = '';
+    noteVars();
+  }
+
+  function noteVars(){
+    var found = [], re = /\{\{\s*([a-zA-Z0-9_ -]{1,40}?)\s*\}\}/g, m;
+    while ((m = re.exec($('eBody').value)) && found.length < 20){
+      if (found.indexOf(m[1].trim()) === -1) found.push(m[1].trim());
+    }
+    $('eVarNote').textContent = found.length
+      ? 'Blanks detected: ' + found.join(', ')
+      : 'Tip: wrap anything the reader should fill in like {{this}}.';
+  }
+
+  function saveEditor(){
+    var body = {
+      title: $('eTitle').value, summary: $('eSummary').value, body: $('eBody').value,
+      platforms: selectedPlatforms(), category: $('eCategory').value,
+      models: $('eModels').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+      tags: $('eTags').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean),
+      visibility: $('ePrivate').checked ? 'private' : 'public'
+    };
+    if (state.remixOf) body.remixOf = state.remixOf;
+    $('eSaveBtn').disabled = true;
+    $('eStatus').innerHTML = '<span class="spinner"></span> Saving…';
+    var req = state.editing
+      ? api('/api/prompts/' + encodeURIComponent(state.editing.id), { method:'PATCH', body: body })
+      : api('/api/prompts', { method:'POST', body: body });
+    req.then(function(p){
+      $('eSaveBtn').disabled = false; $('eStatus').textContent = '';
+      state.current = p;
+      loadList(); loadMine();
+      openPrompt(p.id);
+    }).catch(function(e){
+      $('eSaveBtn').disabled = false;
+      $('eStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+    });
+  }
+
+  // ---- account -----------------------------------------------------------
+  function openAccount(){
+    show('acctView');
+    var me = state.me || {};
+    $('aWho').innerHTML = '<b>' + esc(me.displayName || me.email) + '</b><br><span class="muted">' + esc(me.email) + '</span>';
+    var label = { approved:'approved', pending:'requested — waiting on the admin', denied:'declined', none:'not requested' };
+    $('aAi').textContent = 'AI access: ' + (label[me.aiAccess] || 'not requested') + '.';
+    $('aRequestWrap').hidden = (me.aiAccess === 'approved' || me.aiAccess === 'pending');
+    $('adminWrap').hidden = !me.isAdmin;
+    if (me.isAdmin) loadAdmin();
+  }
+
+  function loadAdmin(){
+    $('adminList').innerHTML = '<p class="muted"><span class="spinner"></span> Loading…</p>';
+    api('/api/admin/users').then(function(users){
+      if (!users.length){ $('adminList').innerHTML = '<p class="muted">No accounts yet.</p>'; return; }
+      $('adminList').innerHTML = users.map(function(u){
+        var needsReset = !!u.resetRequestedAt;
+        return '<div style="padding:10px 0; border-bottom:1px solid var(--sep);">'
+          + '<div><b>' + esc(u.displayName || u.email) + '</b>'
+          + (u.isAdmin ? ' <span class="chip">admin</span>' : '') + '</div>'
+          + '<div class="muted">' + esc(u.email) + ' &middot; AI: ' + esc(u.aiAccess || 'none')
+          + (needsReset ? ' &middot; <span style="color:var(--orange)">password reset requested</span>' : '') + '</div>'
+          + (u.aiNote ? '<div class="muted" style="margin-top:4px;">&ldquo;' + esc(u.aiNote) + '&rdquo;</div>' : '')
+          + '<div class="actions" style="margin-top:8px;">'
+          + (u.aiAccess !== 'approved' ? '<button class="btn btn-ghost" data-ai="approved" data-uid="' + esc(u.id) + '">Approve AI</button>' : '')
+          + (u.aiAccess === 'pending' ? '<button class="btn btn-ghost" data-ai="denied" data-uid="' + esc(u.id) + '">Deny</button>' : '')
+          + '<button class="btn btn-ghost" data-reset="1" data-uid="' + esc(u.id) + '">Reset password</button>'
+          + '</div></div>';
+      }).join('');
+    }).catch(function(e){ $('adminList').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>'; });
+  }
+
+  // ---- passkey enrolment -------------------------------------------------
+  function b64urlToBuf(str){
+    var pad = str.length % 4 ? new Array(5 - (str.length % 4)).join('=') : '';
+    var bin = atob(str.replace(/-/g,'+').replace(/_/g,'/') + pad);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function bufToB64url(buf){
+    var bytes = new Uint8Array(buf), str = '';
+    for (var i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+    return btoa(str).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+
+  function addPasskey(){
+    var st = $('aPasskeyStatus');
+    if (!(window.PublicKeyCredential && navigator.credentials)){
+      st.textContent = 'This browser has no passkey support.'; return;
+    }
+    st.innerHTML = '<span class="spinner"></span> Waiting for Face ID…';
+    api('/api/auth/passkey/register/options', { method:'POST' }).then(function(options){
+      options.challenge = b64urlToBuf(options.challenge);
+      options.user.id = b64urlToBuf(options.user.id);
+      (options.excludeCredentials || []).forEach(function(c){ c.id = b64urlToBuf(c.id); });
+      return navigator.credentials.create({ publicKey: options });
+    }).then(function(cred){
+      return api('/api/auth/passkey/register/verify', { method:'POST', body: {
+        id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+        clientExtensionResults: cred.getClientExtensionResults(),
+        response: {
+          clientDataJSON: bufToB64url(cred.response.clientDataJSON),
+          attestationObject: bufToB64url(cred.response.attestationObject),
+          transports: cred.response.getTransports ? cred.response.getTransports() : []
+        }
+      }});
+    }).then(function(){
+      st.innerHTML = '<span style="color:var(--green)">Passkey added. You can sign in with Face ID now.</span>';
+    }).catch(function(e){
+      st.innerHTML = '<span style="color:var(--red)">'
+        + esc(e && e.name === 'NotAllowedError' ? 'Cancelled.' : (e.message || 'Could not add a passkey.')) + '</span>';
+    });
+  }
+
+  // ---- wiring ------------------------------------------------------------
+  $('newBtn').addEventListener('click', function(){ openEditor('new', {}); });
+  $('detailBack').addEventListener('click', function(){ show('listView'); });
+  $('editBack').addEventListener('click', function(){ show(state.current ? 'detailView' : 'listView'); });
+  $('acctBack').addEventListener('click', function(){ show('listView'); });
+  $('acctBtn').addEventListener('click', openAccount);
+  $('outBtn').addEventListener('click', function(){
+    api('/api/auth/logout', { method:'POST' }).then(function(){ window.location.replace('/login'); });
+  });
+
+  var qTimer = null;
+  $('q').addEventListener('input', function(){
+    state.q = $('q').value;
+    clearTimeout(qTimer);
+    qTimer = setTimeout(function(){ if (state.scope === 'all') loadList(); }, 250);
+  });
+  $('platformSel').addEventListener('change', function(){ state.platform = this.value; loadList(); });
+  $('categorySel').addEventListener('change', function(){ state.category = this.value; loadList(); });
+
+  $('sortSeg').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-sort]'); if (!b) return;
+    state.sort = b.getAttribute('data-sort');
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x){
+      x.setAttribute('aria-pressed', String(x === b)); });
+    loadList();
+  });
+  $('scopeSeg').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-scope]'); if (!b) return;
+    state.scope = b.getAttribute('data-scope');
+    Array.prototype.forEach.call(this.querySelectorAll('button'), function(x){
+      x.setAttribute('aria-pressed', String(x === b)); });
+    renderList();
+  });
+
+  // One listener for the whole list rather than per card, so re-rendering the
+  // list never has to re-bind anything.
+  $('plist').addEventListener('click', function(e){
+    var card = e.target.closest('.pcard'); if (!card) return;
+    var id = card.getAttribute('data-id');
+    var voteBtn = e.target.closest('button[data-vote]');
+    if (voteBtn){
+      var want = Number(voteBtn.getAttribute('data-vote'));
+      var pressed = voteBtn.getAttribute('aria-pressed') === 'true';
+      api('/api/prompts/' + encodeURIComponent(id) + '/vote', { method:'POST', body:{ value: pressed ? 0 : want } })
+        .then(function(r){
+          card.querySelector('.votenum').textContent = fmt(r.score);
+          var up = card.querySelector('.votebtn.up'), down = card.querySelector('.votebtn.down');
+          if (up) up.setAttribute('aria-pressed', String(r.myVote === 1));
+          if (down) down.setAttribute('aria-pressed', String(r.myVote === -1));
+        })
+        .catch(function(err){ $('listNote').textContent = err.message; });
+      return;
+    }
+    openPrompt(id);
+  });
+
+  $('dCopy').addEventListener('click', function(){
+    var p = state.current;
+    copyText(filledBody()).then(function(){
+      $('dStatus').innerHTML = '<span style="color:var(--green)">Copied.</span>';
+      return api('/api/prompts/' + encodeURIComponent(p.id) + '/copied', { method:'POST' });
+    }).then(function(r){
+      if (r) { state.current.copyCount = r.copyCount; paintDetail(); }
+    }).catch(function(e){ $('dStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>'; });
+  });
+
+  $('dSave').addEventListener('click', function(){
+    var p = state.current, want = !p.saved;
+    api('/api/prompts/' + encodeURIComponent(p.id) + '/save', { method:'POST', body:{ saved: want } })
+      .then(function(){ p.saved = want; p.saveCount = (p.saveCount||0) + (want?1:-1); paintDetail(); loadMine(); })
+      .catch(function(e){ $('dStatus').textContent = e.message; });
+  });
+
+  $('dRemixBtn').addEventListener('click', function(){ openEditor('remix', state.current); });
+  $('dEdit').addEventListener('click', function(){ openEditor('edit', state.current); });
+  $('dDelete').addEventListener('click', function(){
+    if (!window.confirm('Delete this prompt? This cannot be undone.')) return;
+    api('/api/prompts/' + encodeURIComponent(state.current.id), { method:'DELETE' })
+      .then(function(){ state.current = null; loadList(); loadMine(); show('listView'); })
+      .catch(function(e){ $('dStatus').textContent = e.message; });
+  });
+
+  // Claude proposes; the user applies. Nothing is written by the AI route.
+  $('dImprove').addEventListener('click', function(){
+    var p = state.current;
+    $('dStatus').innerHTML = '<span class="spinner"></span> Asking Claude…';
+    $('dImprove').disabled = true;
+    api('/api/prompts/' + encodeURIComponent(p.id) + '/improve', { method:'POST', body:{} })
+      .then(function(d){
+        $('dImprove').disabled = false; $('dStatus').textContent = '';
+        state.proposal = d.proposal;
+        $('pNotes').textContent = d.proposal.notes || '';
+        $('pTitle').textContent = d.proposal.title || '';
+        $('pSummary').textContent = d.proposal.summary || '';
+        $('pBody').textContent = d.proposal.body || '';
+        $('pHint').textContent = p.isMine
+          ? 'Apply saves this over your prompt. Nothing is written until you tap it.'
+          : "This isn't your prompt, so Apply opens it as a remix credited to the original.";
+        $('dProposalWrap').hidden = false;
+      })
+      .catch(function(e){
+        $('dImprove').disabled = false;
+        $('dStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+      });
+  });
+  $('pDiscard').addEventListener('click', function(){ $('dProposalWrap').hidden = true; state.proposal = null; });
+  $('pApply').addEventListener('click', function(){
+    var prop = state.proposal, p = state.current;
+    if (!prop) return;
+    if (p.isMine){
+      api('/api/prompts/' + encodeURIComponent(p.id), { method:'PATCH', body:{
+        title: prop.title, summary: prop.summary, body: prop.body,
+        tags: (p.tags && p.tags.length) ? p.tags : prop.suggestedTags
+      }}).then(function(updated){
+        state.current = Object.assign({}, p, updated);
+        $('dProposalWrap').hidden = true; state.proposal = null;
+        paintDetail(); loadList(); loadMine();
+      }).catch(function(e){ $('dStatus').textContent = e.message; });
+    } else {
+      openEditor('remix', Object.assign({}, p, {
+        title: prop.title, summary: prop.summary, body: prop.body,
+        tags: prop.suggestedTags && prop.suggestedTags.length ? prop.suggestedTags : p.tags
+      }));
+      state.remixOf = p.id;
+    }
+  });
+
+  $('eBody').addEventListener('input', noteVars);
+  $('eSaveBtn').addEventListener('click', saveEditor);
+  $('draftBtn').addEventListener('click', function(){
+    var want = $('draftWant').value.trim();
+    if (want.length < 8){ $('eStatus').textContent = 'Say a bit more about what you need.'; return; }
+    $('draftBtn').disabled = true;
+    $('draftBtn').innerHTML = '<span class="spinner"></span> Drafting…';
+    api('/api/ai/draft', { method:'POST', body:{ description: want, platforms: selectedPlatforms() } })
+      .then(function(d){
+        $('draftBtn').disabled = false; $('draftBtn').textContent = 'Draft with Claude';
+        state.proposal = d.proposal;
+        $('epNotes').textContent = d.proposal.notes || '';
+        $('epBody').textContent = d.proposal.body || '';
+        $('eProposalWrap').hidden = false;
+      })
+      .catch(function(e){
+        $('draftBtn').disabled = false; $('draftBtn').textContent = 'Draft with Claude';
+        $('eStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
+      });
+  });
+  $('epDiscard').addEventListener('click', function(){ $('eProposalWrap').hidden = true; });
+  $('epApply').addEventListener('click', function(){
+    var prop = state.proposal; if (!prop) return;
+    $('eTitle').value = prop.title || $('eTitle').value;
+    $('eSummary').value = prop.summary || '';
+    $('eBody').value = prop.body || '';
+    if (prop.suggestedTags && prop.suggestedTags.length) $('eTags').value = prop.suggestedTags.join(', ');
+    $('eProposalWrap').hidden = true;
+    noteVars();
+    $('eTitle').scrollIntoView({ behavior:'smooth', block:'center' });
+  });
+
+  $('aRequestBtn').addEventListener('click', function(){
+    $('aRequestBtn').disabled = true;
+    api('/api/ai-access/request', { method:'POST', body:{ note: $('aNote').value } })
+      .then(function(){ return api('/api/auth/me'); })
+      .then(function(d){ state.me = d.user; paintMe(); openAccount(); })
+      .catch(function(e){ $('aRequestBtn').disabled = false; $('aAi').textContent = e.message; });
+  });
+  $('aPasskeyBtn').addEventListener('click', addPasskey);
+  $('aPwBtn').addEventListener('click', function(){
+    $('aPwStatus').innerHTML = '<span class="spinner"></span> Saving…';
+    api('/api/auth/password', { method:'POST', body:{
+      currentPassword: $('aCur').value, newPassword: $('aNew').value } })
+      .then(function(){
+        $('aCur').value = ''; $('aNew').value = '';
+        $('aPwStatus').innerHTML = '<span style="color:var(--green)">Password changed.</span>';
+        return api('/api/auth/me');
+      })
+      .then(function(d){ state.me = d.user; paintMe(); })
+      .catch(function(e){ $('aPwStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>'; });
+  });
+
+  $('adminList').addEventListener('click', function(e){
+    var b = e.target.closest('button[data-uid]'); if (!b) return;
+    var uid = b.getAttribute('data-uid');
+    if (b.getAttribute('data-reset')){
+      if (!window.confirm('Issue a temporary password for this account? Their current one stops working.')) return;
+      api('/api/admin/reset-password', { method:'POST', body:{ userId: uid } })
+        .then(function(d){
+          // Shown once and never stored in the clear — Erik reads it out.
+          window.alert('Temporary password for ' + d.email + ':\n\n' + d.password
+            + '\n\nRead this out to them now. It is not stored and cannot be shown again.');
+          loadAdmin();
+        }).catch(function(err){ window.alert(err.message); });
+      return;
+    }
+    api('/api/admin/ai-access', { method:'POST', body:{ userId: uid, decision: b.getAttribute('data-ai') } })
+      .then(loadAdmin).catch(function(err){ window.alert(err.message); });
+  });
+
+  // ---- boot --------------------------------------------------------------
+  buildEditorChoices();
+  beacon();
+  api('/api/auth/me').then(function(d){
+    if (!d.signedIn){ window.location.replace('/login'); return; }
+    state.me = d.user;
+    paintMe();
+    return Promise.all([loadList(), loadMine()]);
+  }).catch(function(){});
+})();
+</script>
+</body></html>
