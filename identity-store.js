@@ -1,0 +1,74 @@
+// The store adapter every app hands to shared/identity.js.
+//
+// This deliberately does NOT go through lib/store.js. That one is bound to the
+// app's own database (`eriks-projects` here), and the whole point of the shared
+// account is that football, dataviz, friction and trip-planner read the SAME
+// user records. Pointing identity at an app's own database would give each app
+// its own private set of users that merely looked shared.
+//
+// Copy this file alongside shared/identity.js when wiring up another app; the
+// only thing that changes per app is nothing at all.
+
+const { Firestore } = require('@google-cloud/firestore');
+
+const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
+const DATABASE = process.env.IDENTITY_DATABASE_ID || 'identity';
+
+let db = null;
+function client() {
+  if (!db) db = new Firestore({ projectId: PROJECT, databaseId: DATABASE });
+  return db;
+}
+
+/** Append-only collections (events, usage) have no natural key. Time-ordered
+ *  prefix so a plain document-id sort is roughly chronological. */
+function autoId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+const store = {
+  async get(collection, id) {
+    const snap = await client().collection(collection).doc(id).get();
+    return snap.exists ? snap.data() : null;
+  },
+  async set(collection, id, value) {
+    await client().collection(collection).doc(id).set(value);
+  },
+  /** Merge fields into a document without touching the rest of it.
+   *
+   *  `set` above overwrites, which is right for a whole record and wrong for
+   *  a patch - entitlement writes land on the identity record alongside the
+   *  password hash, the access map and the spend ledger, and an overwrite
+   *  would take those with it. */
+  async merge(collection, id, patch) {
+    await client().collection(collection).doc(id).set(patch, { merge: true });
+  },
+  async remove(collection, id) {
+    await client().collection(collection).doc(id).delete();
+  },
+  async list(collection) {
+    const snap = await client().collection(collection).get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  /** Atomic add on numeric fields. The spend ledger is written on every model
+   *  call, sometimes concurrently by different apps for the same account, so a
+   *  read-modify-write would quietly lose charges under any parallelism.
+   *  Firestore's own increment is the only way to get this right. */
+  async bump(collection, id, deltas) {
+    const { FieldValue } = require('@google-cloud/firestore');
+    const patch = {};
+    for (const [field, by] of Object.entries(deltas)) {
+      if (typeof by === 'number' && Number.isFinite(by)) patch[field] = FieldValue.increment(by);
+    }
+    if (!Object.keys(patch).length) return;
+    await client().collection(collection).doc(id).set(patch, { merge: true });
+  },
+
+  async add(collection, value) {
+    const id = autoId();
+    await client().collection(collection).doc(id).set(value);
+    return id;
+  },
+};
+
+module.exports = { store, databaseId: () => DATABASE };

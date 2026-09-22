@@ -17,6 +17,8 @@ const path = require('path');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
 const { createAccounts } = require('./accounts');
+const identityLib = require('./identity');
+const identityStore = require('./identity-store');
 const { createAnalytics } = require('./analytics');
 const {
   PLATFORMS, CATEGORIES, clean, pickList, cleanTags, extractVariables,
@@ -31,9 +33,10 @@ const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
 
 // Claude Opus 5. Both AI routes are single-shot and short, and both sit behind
-// requireAiAccess, so the per-call cost is bounded by the approval list rather
-// than by traffic. effort 'medium' because rewriting a prompt is a small,
-// well-specified job — 'high' spent thinking tokens without changing answers.
+// the shared budget, so the per-call cost is bounded by a dollar figure rather
+// than by an approval list. effort 'medium' because rewriting a prompt is a
+// small, well-specified job — 'high' spent thinking tokens without changing
+// answers.
 const MODEL = 'claude-opus-5';
 const AI_EFFORT = 'medium';
 
@@ -65,13 +68,33 @@ const accounts = createAccounts({
   rpName: 'Spellbook',
   adminEmail: ADMIN_EMAIL,
 });
-const { requireLogin, requireAiAccess, requireAdmin } = accounts;
+const { requireLogin, requireAdmin } = accounts;
+
+// The account that covers every app on this domain: one email, one password,
+// one passkey, one credit balance. Mounted BESIDE this app's own sign-in
+// rather than instead of it, the same way the football app does it - the
+// original door keeps working and nobody is signed out by the change.
+//
+// `requireAiAccess` is deliberately NOT destructured any more. It was this
+// app's own approval list, which is the pattern every other app here retired:
+// a human approving people one at a time is a slower version of a budget and
+// never actually bounded anything. See the AI routes below.
+const identity = identityLib.create({
+  store: identityStore.store,
+  secret: () => process.env.IDENTITY_SESSION_SECRET || '',
+  app: 'spellbook',
+  baseDomain: process.env.PASSKEY_RP_ID || '',
+  rpName: 'Spellbook',
+});
 
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
 app.get('/login', (req, res) => res.sendFile(path.join(__dirname, 'login.html')));
 
 app.use(accounts.attachUser);
 accounts.mount(app);
+identity.mount(app);
+// Price and record every model call this app makes.
+identity.meter(anthropic);
 
 const analytics = createAnalytics({ db, requireAdmin, requireLogin });
 analytics.mount(app);
@@ -401,9 +424,16 @@ app.post('/api/prompts/:id/copied', requireLogin, async (req, res) => {
 
 // ---------------------------------------------------------------------------
 // AI. Both routes below spend Erik's Anthropic key, so both sit behind
-// requireAiAccess — never requireLogin alone. Registration is open, so a
-// login-only gate here would mean any stranger who found the URL could run
-// Opus 5 on his account.
+// requireBudget AND requireDailyCap — never requireLogin alone. Registration
+// is open, so a login-only gate here would mean any stranger who found the URL
+// could run Opus 5 on his account.
+//
+// This replaces requireAiAccess, which was this app's own approval list. The
+// instinct it encoded is still right; only the mechanism moved. Every account
+// gets FREE_ALLOWANCE_USD of AI once across the whole domain, every call is
+// priced against it, and an exhausted one gets a 402 carrying somewhere to top
+// up. A human approving people one at a time is a slower version of that, and
+// it never actually bounded the money.
 //
 // Both follow the same confirm-before-save shape the other apps use: the model
 // returns a proposal, the frontend renders it as Apply/Discard, and nothing is
@@ -477,7 +507,13 @@ async function proposePrompt(userText) {
 }
 
 // Draft from a description. The user never has to start from a blank box.
-app.post('/api/ai/draft', requireLogin, requireAiAccess, async (req, res) => {
+//
+// Metered, not approved. The standing rule across these apps: an Anthropic
+// call never sits behind a login alone - it goes behind requireBudget AND
+// requireDailyCap, so what bounds the spend is a dollar figure rather than
+// somebody's memory of who they said yes to.
+app.post('/api/ai/draft', requireLogin, identity.requireBudget, identity.requireDailyCap,
+  async (req, res) => {
   try {
     const want = clean((req.body || {}).description, 1500);
     if (want.length < 8) return res.status(400).json({ error: 'Describe what the prompt should do.' });
@@ -497,7 +533,8 @@ app.post('/api/ai/draft', requireLogin, requireAiAccess, async (req, res) => {
 // Critique and tighten an existing prompt. Readable by anyone who can see the
 // prompt — you may want to improve someone else's into a remix of your own —
 // but it writes nothing either way.
-app.post('/api/prompts/:id/improve', requireLogin, requireAiAccess, async (req, res) => {
+app.post('/api/prompts/:id/improve', requireLogin, identity.requireBudget, identity.requireDailyCap,
+  async (req, res) => {
   const found = await loadVisiblePrompt(req, res);
   if (!found) return;
   try {

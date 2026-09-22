@@ -51,6 +51,8 @@
   .btn-ghost{background:var(--fill); color:var(--label);}
   .btn-danger{background:none; color:var(--red);}
   .btn-wide{width:100%;}
+  .credit-options{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:10px;}
+  .credit-options .btn{width:100%; padding-left:6px; padding-right:6px; font-size:14px;}
   .icon-btn{width:36px; height:36px; border-radius:50%; border:none; background:var(--fill); color:var(--tint);
     font-size:19px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; flex:0 0 auto;}
   .back-btn{background:none; border:none; color:var(--tint); font:inherit; font-size:15px; font-weight:600; padding:4px 0; cursor:pointer;}
@@ -254,9 +256,12 @@
     <div class="card card-pad" style="margin-top:8px;">
       <p id="aWho"></p>
       <p class="muted" id="aAi"></p>
-      <div id="aRequestWrap" style="margin-top:12px;">
-        <div class="field"><label for="aNote">Why you'd like AI access <span style="opacity:.6">(optional)</span></label><input id="aNote" maxlength="500"></div>
-        <button class="btn btn-ghost btn-wide" id="aRequestBtn">Request AI access</button>
+      <!-- AI credit. This used to be "request access, the admin reviews each
+           one by hand", which is the pattern every other app on this domain
+           retired: a budget bounds the money, an approval list never did. -->
+      <div id="creditWrap" style="margin-top:12px;">
+        <div id="creditBody"></div>
+        <div class="muted" id="creditStatus" style="min-height:1.3em;margin-top:8px;"></div>
       </div>
     </div>
 
@@ -357,20 +362,22 @@
     if (me.mustChangePassword){
       b.hidden = false; b.className = 'banner err';
       b.textContent = 'You are signed in with a temporary password. Set a new one under Account.';
-    } else if (me.aiAccess === 'approved'){
-      b.hidden = true;
-    } else if (me.aiAccess === 'pending'){
-      b.hidden = false; b.className = 'banner warn';
-      b.textContent = 'AI access requested — the admin reviews each one by hand. Everything else works now.';
-    } else if (me.aiAccess === 'denied'){
-      b.hidden = false; b.className = 'banner warn';
-      b.textContent = 'AI access was declined. You can still publish, vote, save and remix prompts.';
     } else {
-      b.hidden = false; b.className = 'banner warn';
-      b.innerHTML = 'Drafting and improving prompts with Claude needs approval (it spends API tokens). ' +
-        '<button class="linkbtn" id="bannerAsk">Request access</button>';
-      var ask = $('bannerAsk');
-      if (ask) ask.addEventListener('click', function(){ openAccount(); });
+      // The banner is for the one thing the reader has to act on. Credit only
+      // becomes that when it runs out - saying "you have $1.87 left" on every
+      // page load is noise, and saying "ask the admin" is the approval model
+      // this app no longer runs.
+      b.hidden = true;
+      loadBilling().then(function(){
+        var bu = (billing && billing.budget) || {};
+        if (!billing || !billing.signedIn || bu.unlimited || Number(bu.remainingUsd) > 0) return;
+        b.hidden = false; b.className = 'banner warn';
+        b.innerHTML = 'You have used your free AI credit. Drafting and improving prompts need more \u2014 '
+          + '<button class="linkbtn" id="bannerTopUp">top up or bring your own key</button>. '
+          + 'Publishing, voting, saving and remixing all still work.';
+        var go = $('bannerTopUp');
+        if (go) go.addEventListener('click', function(){ openAccount(); });
+      });
     }
   }
 
@@ -629,11 +636,100 @@
     show('acctView');
     var me = state.me || {};
     $('aWho').innerHTML = '<b>' + esc(me.displayName || me.email) + '</b><br><span class="muted">' + esc(me.email) + '</span>';
-    var label = { approved:'approved', pending:'requested — waiting on the admin', denied:'declined', none:'not requested' };
-    $('aAi').textContent = 'AI access: ' + (label[me.aiAccess] || 'not requested') + '.';
-    $('aRequestWrap').hidden = (me.aiAccess === 'approved' || me.aiAccess === 'pending');
+    $('aAi').textContent = '';
+    loadBilling();
     $('adminWrap').hidden = !me.isAdmin;
     if (me.isAdmin) loadAdmin();
+  }
+
+  // ---- AI credit ----------------------------------------------------------
+  // One profile, one passkey, one balance for every app on the domain.
+  var ACCOUNT_URL = 'https://acct.strongtechnicalconsulting.com';
+  // The balance, the membership and the top-ups all live on the shared
+  // account, so this is the same surface every other app on the domain shows -
+  // only the styling is Spellbook's.
+  var billing = null;
+
+  function money(n){ return '$' + Number(n || 0).toFixed(2); }
+  /** A price, not a balance: "$5 a month", not "$5.00 a month". */
+  function fee(n){ var v = Number(n || 0); return '$' + (v % 1 ? v.toFixed(2) : String(v)); }
+
+  function loadBilling(){
+    return fetch('/api/id/billing').then(function(r){ return r.json(); })
+      .then(function(d){ billing = d; paintCredit(); })
+      .catch(function(){ billing = null; });
+  }
+
+  function paintCredit(){
+    var body = $('creditBody');
+    if (!body) return;
+    $('creditStatus').textContent = '';
+    if (!billing || !billing.signedIn){
+      // Signed in through Spellbook's own door rather than the shared account:
+      // there is no balance to report and nothing to sell.
+      body.innerHTML = '<p class="muted">Sign in with your account for all the apps to use Claude here. '
+        + '<a href="' + ACCOUNT_URL + '">Manage that account</a>.</p>';
+      return;
+    }
+    var b = billing.budget || {};
+    var html = '<p class="muted">' + (b.unlimited
+      ? (b.reason === 'byok' ? 'Running on your own Anthropic key \u2014 not metered.' : 'Not metered.')
+      : money(b.remainingUsd) + ' of ' + money(b.allowanceUsd) + ' AI credit left. It works across every app on this domain.')
+      + '</p>';
+
+    if (!billing.available){
+      if (billing.elsewhere){
+        html += '<a class="btn btn-ghost btn-wide" href="' + esc(billing.elsewhere) + '">Membership and credit</a>';
+      }
+    } else if (!billing.member){
+      html += '<p class="muted">Two separate things, and you need both: the <b>' + fee(billing.monthlyUsd)
+        + '/month membership</b>, which is the fee for the apps and <b>includes no AI</b>; and <b>credit</b> '
+        + 'bought on top, sold at what the calls actually cost. Or bring your own Anthropic key instead of credit.</p>'
+        + '<button class="btn btn-ghost btn-wide" id="cMember">Become a member \u2014 ' + fee(billing.monthlyUsd) + '/month</button>';
+    } else {
+      var byokOn = billing.byok && billing.byok.present;
+      html += '<p class="muted">Member \u2014 ' + fee(billing.monthlyUsd) + ' a month for the apps. ' + (byokOn
+        ? 'Your own key covers the AI, so there is nothing to buy here.'
+        : '<b>That fee is not AI</b> \u2014 drafting and improving spend credit, bought below at cost.') + '</p>';
+      if (!byokOn){
+        html += '<div class="credit-options">' + (billing.topUps || []).map(function(o){
+          return '<button class="btn btn-ghost" data-usd="' + Number(o.usd) + '">' + esc(o.label) + '</button>';
+        }).join('') + '</div>';
+      }
+      if (billing.manageable){
+        html += '<button class="btn btn-ghost btn-wide" id="cPortal" style="margin-top:8px;">Manage billing</button>';
+      }
+    }
+    body.innerHTML = html;
+
+    var mb = $('cMember');
+    if (mb) mb.addEventListener('click', function(){ checkout('membership', {}, mb); });
+    var pb = $('cPortal');
+    if (pb) pb.addEventListener('click', function(){ checkout('portal', {}, pb); });
+    Array.prototype.forEach.call(body.querySelectorAll('[data-usd]'), function(btn){
+      btn.addEventListener('click', function(){
+        checkout('credit', { usd: Number(btn.getAttribute('data-usd')) }, btn);
+      });
+    });
+  }
+
+  /** Off to Stripe, and back to this page afterwards. */
+  function checkout(what, extra, btn){
+    if (btn) btn.disabled = true;
+    $('creditStatus').textContent = 'Opening checkout\u2026';
+    var payload = { returnTo: location.pathname };
+    for (var k in (extra || {})) payload[k] = extra[k];
+    fetch('/api/id/billing/' + what, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(d){
+        if (!r.ok || !d.url) throw new Error(d.detail || d.error || 'Could not open checkout.');
+        location.href = d.url;
+      });
+    }).catch(function(e){
+      $('creditStatus').textContent = e.message;
+      if (btn) btn.disabled = false;
+    });
   }
 
   function loadAdmin(){
@@ -645,12 +741,13 @@
         return '<div style="padding:10px 0; border-bottom:1px solid var(--sep);">'
           + '<div><b>' + esc(u.displayName || u.email) + '</b>'
           + (u.isAdmin ? ' <span class="chip">admin</span>' : '') + '</div>'
-          + '<div class="muted">' + esc(u.email) + ' &middot; AI: ' + esc(u.aiAccess || 'none')
+          + '<div class="muted">' + esc(u.email)
           + (needsReset ? ' &middot; <span style="color:var(--orange)">password reset requested</span>' : '') + '</div>'
-          + (u.aiNote ? '<div class="muted" style="margin-top:4px;">&ldquo;' + esc(u.aiNote) + '&rdquo;</div>' : '')
+          // The Approve AI / Deny buttons are gone with the approval model.
+          // The aiAccess flag is still written and still gates nothing, so a
+          // button that sets it would do visibly nothing - worse than no
+          // button. Who may spend is a budget now, managed on the account.
           + '<div class="actions" style="margin-top:8px;">'
-          + (u.aiAccess !== 'approved' ? '<button class="btn btn-ghost" data-ai="approved" data-uid="' + esc(u.id) + '">Approve AI</button>' : '')
-          + (u.aiAccess === 'pending' ? '<button class="btn btn-ghost" data-ai="denied" data-uid="' + esc(u.id) + '">Deny</button>' : '')
           + '<button class="btn btn-ghost" data-reset="1" data-uid="' + esc(u.id) + '">Reset password</button>'
           + '</div></div>';
       }).join('');
@@ -859,13 +956,6 @@
     $('eTitle').scrollIntoView({ behavior:'smooth', block:'center' });
   });
 
-  $('aRequestBtn').addEventListener('click', function(){
-    $('aRequestBtn').disabled = true;
-    api('/api/ai-access/request', { method:'POST', body:{ note: $('aNote').value } })
-      .then(function(){ return api('/api/auth/me'); })
-      .then(function(d){ state.me = d.user; paintMe(); openAccount(); })
-      .catch(function(e){ $('aRequestBtn').disabled = false; $('aAi').textContent = e.message; });
-  });
   $('aPasskeyBtn').addEventListener('click', addPasskey);
   $('aPwBtn').addEventListener('click', function(){
     $('aPwStatus').innerHTML = '<span class="spinner"></span> Saving…';
@@ -892,10 +982,7 @@
             + '\n\nRead this out to them now. It is not stored and cannot be shown again.');
           loadAdmin();
         }).catch(function(err){ window.alert(err.message); });
-      return;
     }
-    api('/api/admin/ai-access', { method:'POST', body:{ userId: uid, decision: b.getAttribute('data-ai') } })
-      .then(loadAdmin).catch(function(err){ window.alert(err.message); });
   });
 
   // ---- boot --------------------------------------------------------------

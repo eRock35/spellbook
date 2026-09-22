@@ -14,7 +14,12 @@
 // gains open registration.
 //
 // The one thing that must not drift: an Anthropic call never sits behind
-// requireLogin alone. It goes behind requireAiAccess. See server.js.
+// requireLogin alone. It goes behind identity.requireBudget AND
+// identity.requireDailyCap. See server.js.
+//
+// requireAiAccess below still exists and is on no route. Leaving it costs
+// nothing; putting it back in front of a model call would undo the move from
+// an approval list to a budget. Don't.
 
 const crypto = require('crypto');
 const {
