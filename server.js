@@ -10,6 +10,7 @@
 
 
 const express = require('express');
+const fs = require('fs');
 const path = require('path');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -19,8 +20,10 @@ const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const {
   PLATFORMS, CATEGORIES, clean, pickList, cleanTags, extractVariables,
-  computeTrend, bodyToPromptFields,
+  computeTrend, bodyToPromptFields, publicByline,
 } = require('./promptfields');
+const stats = require('./authorstats');
+const cards = require('./cards');
 
 const PORT = process.env.PORT || 8080;
 const PROJECT_ID = process.env.GOOGLE_CLOUD_PROJECT || 'metal-celerity-236019';
@@ -191,14 +194,43 @@ function requireLoginOrCron(req, res, next) {
   return requireLogin(req, res, next);
 }
 
-app.use(express.static(path.join(__dirname, 'public')));
+/** The rollup rescores every prompt: the scheduler's key, or the admin.
+ *  It used to take any signed-in session (2026-09-26). */
+function requireCronOrAdmin(req, res, next) {
+  return requireLoginOrCron(req, res, () => {
+    if (req.isCron) return next();
+    const email = String((req.user && req.user.email) || '').toLowerCase();
+    if (ADMIN_EMAIL && email === ADMIN_EMAIL.toLowerCase()) return next();
+    return res.status(403).json({ error: 'Only the scheduler runs this.' });
+  });
+}
+
+// The front page gets the app's own link-preview tags; express.static would
+// otherwise answer `/` with the bare file before the routes below ran.
+app.get('/', (req, res) => sendIndex(req, res, siteMeta(req)));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 // ---------------------------------------------------------------------------
 // Prompts
 // ---------------------------------------------------------------------------
 const prompts = () => db.collection('prompts');
 
+/** The opaque public handle for an author - see authorstats.authorKey. */
+const keyFor = (uid) => stats.authorKey(uid, SESSION_SECRET);
+
+/**
+ * What any reader may see of a prompt.
+ *
+ * `authorId` is deliberately NOT in it any more (2026-09-26). A uid is
+ * base64url(lowercased email), so sending it with every public prompt put
+ * every author's email address one decode away from anyone who opened the
+ * network tab. `isMine` answers the only question the page used it for, and
+ * `authorKey` is the opaque handle that links to /u/<key>.
+ */
 function publicPrompt(id, d, extra) {
+  const remixOf = d.remixOf && typeof d.remixOf === 'object'
+    ? { id: d.remixOf.id || null, title: d.remixOf.title || '', authorName: publicByline(d.remixOf.authorName) }
+    : null;
   return Object.assign({
     id,
     title: d.title || 'Untitled',
@@ -209,8 +241,8 @@ function publicPrompt(id, d, extra) {
     category: d.category || 'other',
     tags: d.tags || [],
     variables: d.variables || [],
-    authorId: d.authorId || null,
-    authorName: d.authorName || 'anonymous',
+    authorKey: d.authorId ? keyFor(d.authorId) : null,
+    authorName: publicByline(d.authorName),
     visibility: d.visibility || 'public',
     score: d.score || 0,
     upvotes: d.upvotes || 0,
@@ -219,7 +251,7 @@ function publicPrompt(id, d, extra) {
     saveCount: d.saveCount || 0,
     remixCount: d.remixCount || 0,
     viewCount: d.viewCount || 0,
-    remixOf: d.remixOf || null,
+    remixOf,
     createdAt: d.createdAt || null,
     updatedAt: d.updatedAt || null,
   }, extra || {});
@@ -266,6 +298,10 @@ app.get('/api/prompts', async (req, res) => {
     const tag = String(req.query.tag || '').toLowerCase();
 
     let rows = snap.docs.map((d) => publicPrompt(d.id, d.data()));
+    // Who owns what, kept server-side: the page needs "is this mine" (you
+    // cannot vote on your own), not anybody's uid.
+    const ownerOf = {};
+    snap.docs.forEach((d) => { ownerOf[d.id] = d.data().authorId; });
     if (platform) rows = rows.filter((p) => p.platforms.includes(platform));
     if (category) rows = rows.filter((p) => p.category === category);
     if (tag) rows = rows.filter((p) => p.tags.includes(tag));
@@ -297,6 +333,7 @@ app.get('/api/prompts', async (req, res) => {
       total: rows.length,
       truncated: snap.size >= SCAN_LIMIT,
       prompts: rows.slice(0, 60).map((p) => Object.assign(p, {
+        isMine: !!uid && ownerOf[p.id] === uid,
         myVote: voteBy[p.id] || 0,
         saved: !!savedBy[p.id],
       })),
@@ -332,6 +369,9 @@ app.get('/api/my/prompts', requireLogin, async (req, res) => {
 
     res.json({
       mine: mineSnap.docs.map((d) => publicPrompt(d.id, d.data(), { isMine: true })),
+      // "Copied 100 times" toasts not yet shown. Free: computed from the
+      // author's own prompts, which this route has just read anyway.
+      milestones: stats.pendingMilestones(mineSnap.docs.map((d) => Object.assign({ id: d.id }, d.data()))),
       saved: visibleSaved.map((d, i) => publicPrompt(d.id, d.data(), {
         saved: true,
         myVote: votes[i] && votes[i].exists ? votes[i].data().value : 0,
@@ -357,9 +397,10 @@ app.get('/api/prompts/:id', async (req, res) => {
       uid ? found.ref.collection('votes').doc(uid).get() : { exists: false },
       uid ? db.collection('users').doc(uid).collection('saves').doc(req.params.id).get() : { exists: false },
     ]);
-    // Fire-and-forget: a view counter is not worth failing a read over, and
-    // awaiting it puts a write in the latency path of every page open.
-    found.ref.update({ viewCount: FieldValue.increment(1) }).catch(() => {});
+    // Awaited (2026-09-26): the service is billed per request and throttled
+    // between them, so a write left running after the response can stall.
+    // A failed counter still never fails the read.
+    await found.ref.update({ viewCount: FieldValue.increment(1) }).catch(() => {});
     res.json(publicPrompt(found.doc.id, found.data, {
       myVote: vote.exists ? vote.data().value : 0,
       saved: save.exists,
@@ -378,6 +419,7 @@ app.post('/api/prompts', requireLogin, async (req, res) => {
     if (parsed.error) return res.status(400).json({ error: parsed.error });
     const now = new Date().toISOString();
     const base = Object.assign({}, parsed.fields, {
+      authorKey: keyFor(req.user.uid),
       score: 0, upvotes: 0, downvotes: 0,
       copyCount: 0, saveCount: 0, remixCount: 0, viewCount: 0,
       remixOf: null, createdAt: now, updatedAt: now,
@@ -391,7 +433,7 @@ app.post('/api/prompts', requireLogin, async (req, res) => {
       const parent = await prompts().doc(remixOfId).get();
       if (parent.exists && parent.data().visibility === 'public') {
         base.remixOf = { id: parent.id, title: parent.data().title, authorName: parent.data().authorName };
-        parent.ref.update({ remixCount: FieldValue.increment(1) }).catch(() => {});
+        await parent.ref.update({ remixCount: FieldValue.increment(1) }).catch(() => {});
       }
     }
     base.trendScore = computeTrend(base);
@@ -414,6 +456,7 @@ app.patch('/api/prompts/:id', requireLogin, async (req, res) => {
     // Counters and authorship are never client-supplied — they are derived
     // from real actions, and bodyToPromptFields must not be able to reset them.
     delete update.authorId;
+    update.authorKey = keyFor(found.data.authorId);
     update.trendScore = computeTrend(Object.assign({}, found.data, update));
     await found.ref.update(update);
     res.json(publicPrompt(found.doc.id, Object.assign({}, found.data, update), { isMine: true }));
@@ -669,19 +712,35 @@ app.post('/api/prompts/:id/improve', requireLogin, requireSharedAccount, identit
 // ---------------------------------------------------------------------------
 const MAX_RESCORE_PER_RUN = 500;
 
-app.post('/api/cron/rollup', requireLoginOrCron, async (req, res) => {
+app.post('/api/cron/rollup', requireCronOrAdmin, async (req, res) => {
   try {
     const snap = await prompts().orderBy('trendScore', 'desc').limit(MAX_RESCORE_PER_RUN).get();
     let rescored = 0;
+    // Which public prompt is #1 on Trending once this run's scores land. It
+    // earns its author the "#1 on Trending" badge, stamped once and kept, so
+    // the badge outlives the hour it was true for. (2026-09-26)
+    let top = null;
+    for (const doc of snap.docs) {
+      if (doc.data().visibility !== 'public') continue;
+      const sc = computeTrend(doc.data());
+      if (!top || sc > top.score) top = { doc, score: sc };
+    }
     // Batched in chunks because a Firestore write batch caps at 500 and a
     // per-document update would be 500 round trips.
     let batch = db.batch();
     let inBatch = 0;
     for (const doc of snap.docs) {
-      const next = computeTrend(doc.data());
-      if (Math.abs(next - (doc.data().trendScore || 0)) > 1e-9) {
-        batch.update(doc.ref, { trendScore: next });
-        rescored += 1;
+      const d = doc.data();
+      const patch = {};
+      const next = computeTrend(d);
+      if (Math.abs(next - (d.trendScore || 0)) > 1e-9) { patch.trendScore = next; rescored += 1; }
+      // Backfill the public author handle on prompts written before it
+      // existed (and rewrite it if SESSION_SECRET ever rotates).
+      const key = d.authorId ? keyFor(d.authorId) : null;
+      if (key && d.authorKey !== key) patch.authorKey = key;
+      if (top && top.doc.id === doc.id && !d.trendingTopAt) patch.trendingTopAt = new Date().toISOString();
+      if (Object.keys(patch).length) {
+        batch.update(doc.ref, patch);
         inBatch += 1;
         if (inBatch >= 400) { await batch.commit(); batch = db.batch(); inBatch = 0; }
       }
@@ -694,6 +753,7 @@ app.post('/api/cron/rollup', requireLoginOrCron, async (req, res) => {
       lastRunAt: new Date().toISOString(),
       scanned: snap.size,
       rescored,
+      topTrendingId: top ? top.doc.id : null,
     }, { merge: true });
 
     res.json({ scanned: snap.size, rescored });
@@ -703,9 +763,248 @@ app.post('/api/cron/rollup', requireLoginOrCron, async (req, res) => {
   }
 });
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// ---------------------------------------------------------------------------
+// Author stats, badges, public author pages, copy milestones and link
+// previews (2026-09-26). No model call anywhere in this block: sums over
+// counters the prompts already carry, and pictures drawn from them.
+// ---------------------------------------------------------------------------
+
+// Copies per author across the public shelf, for "Top 5% author". Read over
+// the same bounded window as browsing (SCAN_LIMIT, by copyCount - the existing
+// visibility+copyCount index) and held for five minutes, filled by whichever
+// request finds it stale: no timer, since this service is billed per request.
+const RANK_TTL_MS = 5 * 60 * 1000;
+let rankCache = null;
+async function authorRankTable() {
+  if (rankCache && Date.now() - rankCache.at < RANK_TTL_MS) return rankCache.table;
+  const snap = await prompts().where('visibility', '==', 'public')
+    .orderBy('copyCount', 'desc').limit(SCAN_LIMIT).get();
+  const table = stats.authorTable(snap.docs.map((d) => d.data()));
+  rankCache = { at: Date.now(), table };
+  return table;
+}
+
+const withId = (d) => Object.assign({ id: d.id }, d.data());
+
+// The signed-in author's own numbers. Everything is summed over their PUBLIC
+// prompts (see authorstats.js for why); private ones are only counted.
+app.get('/api/my/stats', requireLogin, async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const [mineSnap, table] = await Promise.all([
+      prompts().where('authorId', '==', uid).orderBy('updatedAt', 'desc').limit(200).get(),
+      authorRankTable().catch(() => new Map()),
+    ]);
+    const docs = mineSnap.docs.map(withId);
+    const t = stats.totals(docs);
+    const best = stats.bestPrompt(docs);
+    const key = keyFor(uid);
+    res.json({
+      byline: publicByline(req.user.displayName || req.user.email),
+      totals: t,
+      privateCount: docs.length - t.prompts,
+      best: best ? publicPrompt(best.id, best, { isMine: true }) : null,
+      rank: stats.percentile(table, uid, t.copies),
+      badges: stats.badges(t, docs),
+      // Only once there is something public to show on it.
+      publicPath: t.prompts ? `/u/${key}` : null,
+      milestones: stats.pendingMilestones(docs),
+    });
+  } catch (err) {
+    console.error('GET /api/my/stats', err);
+    res.status(500).json({ error: 'Could not load your stats.' });
+  }
 });
+
+// The author has seen their "copied N times" toast: stamp each prompt with
+// the milestone it has reached so it is never shown twice. The client names
+// prompts, never numbers - the milestone is worked out here from the count.
+app.post('/api/my/milestones/seen', requireLogin, async (req, res) => {
+  try {
+    const ids = (Array.isArray((req.body || {}).ids) ? req.body.ids : [])
+      .map((v) => String(v || '')).filter((v) => /^[A-Za-z0-9_-]{1,64}$/.test(v)).slice(0, 10);
+    if (!ids.length) return res.json({ ok: true, marked: 0 });
+    const snaps = await db.getAll(...ids.map((id) => prompts().doc(id)));
+    let marked = 0;
+    for (const d of snaps) {
+      if (!d.exists || d.data().authorId !== req.user.uid) continue;
+      const m = stats.milestoneFor(d.data().copyCount);
+      if (m > (Number(d.data().celebratedCopies) || 0)) {
+        await prompts().doc(d.id).update({ celebratedCopies: m });
+        marked += 1;
+      }
+    }
+    res.json({ ok: true, marked });
+  } catch (err) {
+    console.error('POST /api/my/milestones/seen', err);
+    res.status(500).json({ error: 'Could not record that.' });
+  }
+});
+
+/**
+ * An author's PUBLIC prompts, by their opaque key, or null. Stored
+ * `authorKey` first (a single-field equality: no composite index); prompts
+ * the rollup has not backfilled yet are found by scanning the public window.
+ * Every hit is re-checked against its authorId, so a stale stored key can
+ * never file one author's prompt under another.
+ */
+async function publicPromptsByKey(key) {
+  if (!stats.AUTHOR_KEY_RE.test(String(key || ''))) return [];
+  const mine = (d) => d.visibility === 'public' && d.authorId && keyFor(d.authorId) === key;
+  const snap = await prompts().where('authorKey', '==', key).limit(200).get();
+  let docs = snap.docs.map(withId).filter(mine);
+  if (!docs.length) {
+    const scan = await prompts().where('visibility', '==', 'public')
+      .orderBy('copyCount', 'desc').limit(SCAN_LIMIT).get();
+    docs = scan.docs.map(withId).filter(mine);
+  }
+  return docs;
+}
+
+const newest = (docs) => docs.slice().sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))[0];
+
+// A public author page. Open, like browsing: it shows nothing that is not
+// already on the public shelf under that byline - their public prompts and
+// sums of those prompts' public counters. No rank here (that is the author's
+// own business), no private prompt, no uid, no email. 404 when the key names
+// nobody with a public prompt, so it cannot confirm that an account exists.
+app.get('/api/authors/:key', async (req, res) => {
+  try {
+    const docs = await publicPromptsByKey(req.params.key);
+    if (!docs.length) return res.status(404).json({ error: 'No public prompts here.' });
+    const uid = req.user && req.user.uid;
+    const t = stats.totals(docs);
+    const best = stats.bestPrompt(docs);
+    const list = docs.slice().sort((a, b) => (b.copyCount || 0) - (a.copyCount || 0)
+      || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    res.json({
+      key: req.params.key,
+      byline: publicByline(newest(docs).authorName),
+      isMe: !!uid && docs[0].authorId === uid,
+      totals: t,
+      best: best ? publicPrompt(best.id, best) : null,
+      badges: stats.badges(t, docs).filter((b) => b.earned).map(({ id, name, hint }) => ({ id, name, hint })),
+      prompts: list.slice(0, 60).map((d) => publicPrompt(d.id, d, { isMine: !!uid && d.authorId === uid })),
+    });
+  } catch (err) {
+    console.error('GET /api/authors/:key', err);
+    res.status(500).json({ error: 'Could not load that author.' });
+  }
+});
+
+// --- link previews ---------------------------------------------------------
+// Every path serves the one page. For a prompt link, a public author link and
+// the front page, the server writes Open Graph / Twitter tags into its <head>
+// first, so a link pasted into a chat unfolds into a card. Crawlers carry no
+// session, and neither does this decision: ONLY a public prompt ever gets its
+// own tags. A private or missing one gets the site's generic tags, byte for
+// byte what an id that never existed gets, so a preview cannot leak a private
+// prompt's title or text or confirm that it exists.
+const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+const pngCache = cards.createCache(200);
+const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+
+function origin(req) { return `${req.protocol}://${req.get('host')}`; }
+
+/** User text bound for a meta tag: no controls or bidi overrides, one line, bounded. */
+function metaText(s, max) {
+  const t = String(s == null ? '' : s)
+    .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+  return t.length <= max ? t : `${t.slice(0, max - 1).trimEnd()}…`;
+}
+
+function siteMeta(req) {
+  return {
+    title: 'Spellbook',
+    description: 'Prompts worth keeping \u2014 shared, voted on and remixed, with a form for every blank.',
+    image: `${origin(req)}/og.png`,
+    url: `${origin(req)}/`,
+  };
+}
+
+function sendIndex(req, res, m) {
+  const e = cards.x;
+  const tags = `<title>${e(m.title)}</title>\n`
+    + `<meta name="description" content="${e(m.description)}">\n`
+    + '<meta property="og:type" content="website"><meta property="og:site_name" content="Spellbook">\n'
+    + `<meta property="og:title" content="${e(m.title)}"><meta property="og:description" content="${e(m.description)}">\n`
+    + `<meta property="og:image" content="${e(m.image)}"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">\n`
+    + `<meta property="og:url" content="${e(m.url)}"><meta name="twitter:card" content="summary_large_image">\n`
+    + `<meta name="twitter:title" content="${e(m.title)}"><meta name="twitter:description" content="${e(m.description)}">`
+    + `<meta name="twitter:image" content="${e(m.image)}">`;
+  res.type('html').send(INDEX_HTML.replace('<title>Spellbook</title>', tags));
+}
+
+async function publicPromptDoc(id) {
+  if (!ID_RE.test(id)) return null;
+  const doc = await prompts().doc(id).get();
+  if (!doc.exists || doc.data().visibility !== 'public') return null;
+  return withId(doc);
+}
+
+function sendPng(res, key, svgFn, maxAge) {
+  let buf = pngCache.get(key);
+  if (!buf) {
+    buf = cards.png(svgFn());
+    if (!buf) return res.status(503).type('text/plain').send('Cards are unavailable.');
+    pngCache.set(key, buf);
+  }
+  res.set('Cache-Control', `public, max-age=${maxAge}`);
+  res.set('X-Content-Type-Options', 'nosniff');
+  return res.type('image/png').send(buf);
+}
+
+// The card for one prompt. Cached by id + updatedAt (an edit redraws it) +
+// copyCount (the number it shows); the LRU bounds how many are kept.
+app.get(/^\/p\/([A-Za-z0-9_-]{1,64})\.png$/, async (req, res) => {
+  try {
+    const d = await publicPromptDoc(req.params[0]);
+    if (!d) return res.status(404).type('text/plain').send('Not here.');
+    const key = `p:${d.id}:${d.updatedAt || ''}:${d.copyCount || 0}`;
+    return sendPng(res, key, () => cards.promptSvg({
+      title: d.title, platforms: d.platforms, copyCount: d.copyCount,
+      body: d.body, by: publicByline(d.authorName),
+    }), 600);
+  } catch (err) {
+    console.error('GET /p/:id.png', err);
+    return res.status(500).type('text/plain').send('Could not draw that prompt.');
+  }
+});
+
+// The front page's card. It shows no data, so it is drawn once per instance.
+app.get('/og.png', (req, res) => sendPng(res, 'og:app', () => cards.appSvg(), 86400));
+
+app.get(/^\/p\/([A-Za-z0-9_-]{1,64})$/, async (req, res) => {
+  let d = null;
+  try { d = await publicPromptDoc(req.params[0]); } catch (err) { console.error('GET /p/:id meta', err.message); }
+  if (!d) return sendIndex(req, res, siteMeta(req));
+  const title = metaText(d.title, 120) || 'A prompt';
+  const blurb = metaText(d.summary, 200) || metaText(d.body, 200);
+  const copies = Number(d.copyCount) || 0;
+  return sendIndex(req, res, {
+    title: `${title} \u00b7 Spellbook`,
+    description: `${copies ? `Copied ${copies.toLocaleString('en-US')} time${copies === 1 ? '' : 's'}. ` : ''}${blurb}`,
+    image: `${origin(req)}/p/${d.id}.png`,
+    url: `${origin(req)}/p/${d.id}`,
+  });
+});
+
+app.get(/^\/u\/([A-Za-z0-9_-]{16})$/, async (req, res) => {
+  let docs = [];
+  try { docs = await publicPromptsByKey(req.params[0]); } catch (err) { console.error('GET /u/:key meta', err.message); }
+  if (!docs.length) return sendIndex(req, res, siteMeta(req));
+  const t = stats.totals(docs);
+  const by = metaText(publicByline(newest(docs).authorName), 60);
+  return sendIndex(req, res, {
+    title: `${by} on Spellbook`,
+    description: `${t.prompts} public prompt${t.prompts === 1 ? '' : 's'}, copied ${t.copies.toLocaleString('en-US')} time${t.copies === 1 ? '' : 's'}.`,
+    image: `${origin(req)}/og.png`,
+    url: `${origin(req)}/u/${req.params[0]}`,
+  });
+});
+
+app.get('*', (req, res) => sendIndex(req, res, siteMeta(req)));
 
 app.listen(PORT, () => {
   console.log(`Spellbook listening on :${PORT}`);

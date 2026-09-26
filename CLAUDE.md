@@ -165,6 +165,105 @@ the shelf cannot quietly demonstrate the broken shape.
 A blank's name becomes its form label. Put the guidance in the prose beside it,
 not inside the braces.
 
+## Author stats, badges and link previews (2026-09-26)
+
+Erik asked for features that "draw users in ... and make it fun". Three, and
+**no model call in any of them** — arithmetic over counters the prompts already
+carry, and pictures drawn from it — so none is metered and none needs the AI
+gate.
+
+### The uid was public, and it is an email address
+
+Found while deciding how to name authors in public: `publicPrompt()` sent
+`authorId` with every prompt on the open shelf, and a uid is
+`base64url(lowercased email)`. Every author's address — the admin's, on all
+twelve seeds — was one `atob` away from anyone who opened the network tab.
+**`authorId` is no longer in any response.** The page only used it to ask "is
+this mine", which the server now answers as `isMine` on the list too.
+
+In its place is **`authorKey`**: `HMAC(key derived from SESSION_SECRET, uid)`,
+16 base64url characters (`authorstats.authorKey`). Opaque, stable, and not
+something a stranger can compute for an address they are curious about. It is
+stored on each prompt (written on create and edit, backfilled by the rollup),
+so `/u/<key>` is a single-field equality query — **no new composite index**.
+Prompts the rollup has not reached yet are found by scanning the public window.
+Every hit is re-checked against its authorId, so a stale stored key cannot
+file one author's prompt under another. Rotating SESSION_SECRET changes every
+key: old `/u/` links 404 until the next rollup rewrites them.
+
+The byline had the same flaw by another road: `displayName || email`, and a
+shared-account session with no display name bridges in with its email *as* the
+display name. `promptfields.publicByline()` cuts anything with an `@` to the
+part before it, strips control and bidi characters, and is applied on write
+and on every read, so older prompts are covered without a migration.
+
+### Stats and badges
+
+- **`GET /api/my/stats`** (login): totals, best prompt, rank, every badge,
+  the public page's path, pending milestones. **Everything sums public prompts
+  only.** A private prompt can only be copied or saved by its own author, so
+  its counters are self-use, not an audience; it is counted ("your 1 private
+  prompt"), never summed.
+- **Rank**: "Top N% author" by copies, in buckets (1/5/10/25/50), **hidden
+  below 20 authors** (`MIN_AUTHORS_FOR_RANK`), with no copies, or outside the
+  top half. Other authors come from the public window (`SCAN_LIMIT`, by
+  `copyCount` — the existing index), held in memory five minutes and filled by
+  whichever request finds it stale. No timer. The author's own figure is their
+  full total, not the window's. Private to the author: never on the public page.
+- **Badges** (`authorstats.BADGES`) are computed on read, nothing stored,
+  except `trendingTopAt`: the rollup stamps the #1 **public** prompt once, so
+  "#1 on Trending" outlives the hour it was true for. Locked badges are shown
+  greyed with their hint and progress — the reason to come back.
+- **`GET /api/authors/:key`** is open, like browsing: byline, sums over public
+  prompts, earned badges, public prompts. It shows nothing that was not already
+  on the shelf under that byline. No rank, no private prompt, no uid, no email;
+  a key with no public prompt 404s, so it cannot confirm an account exists.
+
+### "Copied 100 times"
+
+When a public prompt reaches 10, 100 or 1,000 copies, its author gets one toast
+on their next visit. `/api/my/prompts` — which the page already loads for a
+signed-in reader — carries `milestones`, worked out from the prompts it has
+just read, so it costs no extra read. The toast posts
+`/api/my/milestones/seen {ids}`, and the server (not the client) stamps
+`celebratedCopies` with the milestone reached. One per prompt, the highest: a
+prompt that went from 8 to 150 between visits says 100 once. Nothing is emailed
+— there is no sender.
+
+### Link previews
+
+Every path still serves the one page, but `/`, `/p/<id>` and `/u/<key>` get
+Open Graph and Twitter tags written into its `<head>` first (`sendIndex`),
+every value through `cards.x()`, user text through `metaText()` (controls and
+bidi out, one line, bounded). The page keeps the address bar on `/p/<id>` and
+`/u/<key>` and has a Share button, so what you copy is what unfolds.
+
+**Only a public prompt ever gets its own tags, whoever asks.** Crawlers carry
+no session, and neither does the decision: a private prompt's link returns the
+generic page **byte for byte** what an id that never existed returns, to its
+owner too. `test/engagement.test.js` asserts that for a guest, a stranger and
+the owner.
+
+Cards are the football app's approach (`cards.js` there): SVG built here,
+`@resvg/resvg-js` 2.6.2, Inter in `fonts/` (Latin subset, SIL OFL licence
+beside it), system fonts never loaded. The subset has no emoji or symbols, so
+`cards.latin()` removes them and folds accented letters outside it to their
+base letter; do not add a glyph to card text that the subset lacks — it draws
+blank. `/p/<id>.png` (public only, 404 otherwise) is cached in memory by id +
+`updatedAt` + `copyCount` (an edit or a copy redraws it; an LRU of 200 bounds
+it); `/og.png` is the static front-page card, drawn once per instance.
+
+Tests: `test/authorstats.test.js` (sums, the 20-author threshold, buckets,
+badges, milestones, the key, bylines, SVG escaping, PNG magic bytes) and
+`test/engagement.test.js` (the routes: no uid anywhere public, private prompts
+absent from author pages, stats and previews, hostile titles and bylines in the
+tags, card caching and redraw, milestones once, the rollup's stamp and
+backfill). Rendered at 390px and 1280px, light and dark.
+
+**Privacy page:** the author page, the byline rule and the preview cards are
+new public surfaces; `eriks-projects/site/privacy.html` has not been changed
+for them.
+
 ## Indexes and the in-memory filter
 
 Five composite indexes, in `firestore.indexes.json`, backing the four
@@ -191,6 +290,16 @@ end-to-end probe.
 You cannot curl the live app from a session container — the proxy blocks
 `*.run.app` and the custom domains. Verify through GCP's own APIs and ask Erik
 to open a browser.
+
+### Two tidy-ups the same day
+
+- `/api/cron/rollup` takes the scheduler's `X-Cron-Key` or the **admin**
+  (`ADMIN_EMAIL`) only; it used to take any signed-in session, so any reader
+  could make it rescore every prompt. The `spellbook-rollup` Scheduler job
+  sends the key (checked 2026-09-26).
+- The view and remix counter writes are awaited before the response
+  (billed per request: a write left running after it can stall). A failed
+  counter still never fails the read.
 
 ## Commit and PR conventions
 

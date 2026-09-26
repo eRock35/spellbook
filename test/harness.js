@@ -69,7 +69,10 @@ class FakeFirestore {
             }
             store.set(key, JSON.parse(JSON.stringify(v)));
           },
-          async update(v) { noNestedArrays(v); store.set(key, Object.assign({}, store.get(key) || {}, v)); },
+          // Increments apply on update as they do on a merge-set: the copy and
+          // save counters are update(increment), and a fake that stored the
+          // sentinel object made every counted prompt read as NaN.
+          async update(v) { noNestedArrays(v); store.set(key, applyIncrements(store.get(key), v)); },
           async delete() { store.delete(key); },
           collection: (sub) => new FakeFirestore({ databaseId: 'sub' }).collection(key + '/' + sub) };
       },
@@ -85,7 +88,9 @@ class FakeFirestore {
     return Promise.all(flat.map((r) => r.get()));
   }
 
-  batch() { const ops = []; return { set(r, v, o) { ops.push([r, v, o]); }, delete(r) { ops.push([r, null]); }, async commit() { for (const [r, v, o] of ops) v === null ? await r.delete() : await r.set(v, o); } }; }
+  // update() too: the rollup batches its rescoring as updates, and without it
+  // the fake threw `batch.update is not a function` - so the rollup had no test.
+  batch() { const ops = []; return { set(r, v, o) { ops.push([r, v, o]); }, update(r, v) { ops.push([r, v, 'update']); }, delete(r) { ops.push([r, null]); }, async commit() { for (const [r, v, o] of ops) { if (v === null) await r.delete(); else if (o === 'update') await r.update(v); else await r.set(v, o); } } }; }
 }
 
 

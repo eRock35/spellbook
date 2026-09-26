@@ -12,6 +12,8 @@
     --shadow:0 1px 2px rgba(21,19,31,.04), 0 8px 24px rgba(21,19,31,.06);
     --shadow-lift:0 2px 6px rgba(21,19,31,.06), 0 18px 40px rgba(91,75,232,.14);
     --radius:16px;
+    /* Medals and the rank chip: white on a gradient kept at >= 6:1. */
+    --medal-a:#5B4BE8; --medal-b:#6D3FD9; --on-medal:#FFFFFF;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
@@ -24,6 +26,8 @@
       --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.5);
       --shadow-lift:0 2px 8px rgba(0,0,0,.5), 0 20px 46px rgba(0,0,0,.6);
       --radius:16px;
+      /* Light medals on a dark page; dark ink on them (>= 6.6:1). */
+      --medal-a:#9B8CFF; --medal-b:#C4A6FF; --on-medal:#140F2E;
     }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
@@ -155,6 +159,50 @@
     border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px;}
   @keyframes spin{to{transform:rotate(360deg);}}
 
+  /* ---- stats, badges, author pages, the milestone toast (2026-09-26) ---- */
+  .byline{background:none; border:none; padding:0; font:inherit; color:inherit; cursor:pointer; text-align:left;}
+  .byline:hover{color:var(--tint); text-decoration:underline;}
+  .hero-stat{font-size:17px; line-height:1.45; margin:0;}
+  .hero-stat b{font-variant-numeric:tabular-nums; color:var(--tint);}
+  .tiles{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:14px;}
+  .tile{background:var(--fill); border-radius:12px; padding:10px 8px; text-align:center; min-width:0;}
+  .tile b{display:block; font-size:22px; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+  .tile span{font-size:12px; color:var(--label-2);}
+  .rankchip{display:inline-flex; align-items:center; gap:6px; margin-top:12px; font-size:13px; font-weight:700;
+    color:var(--on-medal); background:linear-gradient(100deg, var(--medal-a), var(--medal-b)); border-radius:999px; padding:5px 12px;}
+  .badges{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px;}
+  @media (min-width:600px){ .badges{grid-template-columns:repeat(4,minmax(0,1fr));} }
+  .badge{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; display:flex;
+    flex-direction:column; align-items:flex-start; gap:6px; box-shadow:var(--shadow); min-width:0;}
+  .medal{width:42px; height:42px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:800; letter-spacing:-.02em; color:var(--on-medal);
+    background:linear-gradient(135deg, var(--medal-a), var(--medal-b)); box-shadow:0 4px 14px rgba(91,75,232,.28);}
+  .badge .bname{font-size:14px; font-weight:700; line-height:1.2;}
+  .badge .bhint{font-size:12px; color:var(--label-2); line-height:1.35;}
+  .badge.locked{box-shadow:none; background:var(--fill);}
+  .badge.locked .medal{background:var(--fill-2); color:var(--label-2); box-shadow:none;}
+  .badge.locked .bname{color:var(--label-2);}
+  .bar{width:100%; height:5px; border-radius:99px; background:var(--fill-2); overflow:hidden;}
+  .bar i{display:block; height:100%; background:var(--tint); border-radius:99px;}
+  .badge-row{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px;}
+  .badge-chip{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; border-radius:999px;
+    padding:4px 10px 4px 4px; background:var(--tint-soft); color:var(--tint);}
+  .badge-chip .medal{width:24px; height:24px; font-size:8.5px; letter-spacing:-.04em; box-shadow:none;}
+  .avatar{width:56px; height:56px; border-radius:50%; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
+    font-size:24px; font-weight:800; color:var(--on-medal); background:linear-gradient(135deg, var(--medal-a), var(--medal-b));}
+  .author-head{display:flex; gap:14px; align-items:center;}
+  .author-head h2{margin:0; font-size:22px; letter-spacing:-.02em; overflow-wrap:anywhere;}
+  .toast{position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom)); transform:translateX(-50%);
+    width:calc(100% - 32px); max-width:440px; z-index:50; background:var(--card); color:var(--label);
+    border:1px solid var(--tint-soft); border-radius:18px; padding:14px 16px; box-shadow:var(--shadow-lift);
+    display:flex; gap:12px; align-items:flex-start; animation:toastIn .5s cubic-bezier(.2,1.4,.4,1) both;}
+  .toast .medal{flex:0 0 auto; animation:medalPop .7s .15s cubic-bezier(.2,1.6,.4,1) both;}
+  .toast p{font-size:14px; margin:0 0 6px;} .toast b{color:var(--tint);}
+  .toast .x{margin-left:auto; background:none; border:none; color:var(--label-3); font-size:20px; line-height:1; cursor:pointer; padding:0 2px;}
+  @keyframes toastIn{from{opacity:0; transform:translate(-50%, 24px) scale(.96);} to{opacity:1; transform:translate(-50%,0) scale(1);}}
+  @keyframes medalPop{from{transform:scale(.3) rotate(-30deg);} to{transform:scale(1) rotate(0);}}
+  @media (prefers-reduced-motion: reduce){ .toast, .toast .medal{animation:none;} }
+
   /* ---- desktop ----------------------------------------------------------
      LAST in the file on purpose. These override base rules of equal
      specificity, and the first attempt sat above them - so the grid stayed a
@@ -177,7 +225,8 @@
     .rail-label{display:block;}
     .plist{display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:14px;}
     /* The reading views stay a column - a 1200px line of prose is worse. */
-    #detailView, #editView, #acctView{max-width:760px;}
+    #detailView, #editView, #acctView, #statsView{max-width:760px;}
+
   }
   .rail-label{display:none; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
     color:var(--label-3); margin:14px 2px 6px;}
@@ -206,6 +255,7 @@
     <span class="who" id="who"></span>
     <span style="display:flex; gap:12px; flex:0 0 auto;">
 
+      <button class="linkbtn" id="statsBtn">Your stats</button>
       <button class="linkbtn" id="acctBtn">Account</button>
       <button class="linkbtn" id="outBtn">Sign out</button>
     </span>
@@ -270,6 +320,7 @@
       <div class="actions">
         <button class="btn btn-primary" id="dCopy">Copy prompt</button>
         <button class="btn btn-ghost" id="dSave">Save</button>
+        <button class="btn btn-ghost" id="dShare">Share</button>
         <button class="btn btn-ghost" id="dRemixBtn">Remix</button>
         <button class="btn btn-ghost" id="dImprove">Improve with Claude</button>
         <button class="btn btn-ghost" id="dEdit" hidden>Edit</button>
@@ -376,6 +427,27 @@
       <div class="card card-pad" style="margin-top:8px;" id="adminList"></div>
     </div>
   </section>
+
+  <!-- ============ YOUR STATS ============ -->
+  <section id="statsView" hidden>
+    <button class="back-btn" id="statsBack">&#8249; All prompts</button>
+    <div class="section-header" style="margin-top:10px;">Your prompts</div>
+    <div class="card card-pad" style="margin-top:8px;" id="sHero"><p class="muted"><span class="spinner"></span> Loading…</p></div>
+    <div id="sBestWrap" hidden>
+      <div class="section-header" style="margin-top:18px;">Your best prompt</div>
+      <div class="plist" id="sBest" style="margin-top:8px;"></div>
+    </div>
+    <div class="section-header" style="margin-top:18px;">Badges</div>
+    <div class="badges" id="sBadges" style="margin-top:8px;"></div>
+    <div class="card card-pad" style="margin-top:14px;" id="sPublic"></div>
+  </section>
+
+  <!-- ============ AUTHOR PAGE ============ -->
+  <section id="authorView" hidden>
+    <button class="back-btn" id="authorBack">&#8249; All prompts</button>
+    <div class="card card-pad" style="margin-top:10px;" id="auHead"></div>
+    <div class="plist" id="auList" style="margin-top:14px;"></div>
+  </section>
 </div>
 
 <script>
@@ -447,8 +519,24 @@
   }
 
   function show(which){
-    ['listView','detailView','editView','acctView'].forEach(function(v){ $(v).hidden = (v !== which); });
+    ['listView','detailView','editView','acctView','statsView','authorView'].forEach(function(v){ $(v).hidden = (v !== which); });
     window.scrollTo(0, 0);
+  }
+
+  /** Shareable addresses: /p/<id> for a prompt, /u/<key> for an author. The
+   *  server writes link-preview tags for those two, so what is in the address
+   *  bar is what unfolds into a card when pasted. */
+  function go(path){
+    if (location.pathname !== path){ try { history.pushState(null, '', path); } catch (e) {} }
+  }
+  function home(){ go('/'); show('listView'); }
+  function route(){
+    var m = location.pathname.match(/^\/p\/([A-Za-z0-9_-]{1,64})$/);
+    if (m) { openPrompt(m[1]); return true; }
+    m = location.pathname.match(/^\/u\/([A-Za-z0-9_-]{16})$/);
+    if (m) { openAuthor(m[1]); return true; }
+    show('listView');
+    return false;
   }
 
   // ---- auth bar ----------------------------------------------------------
@@ -495,7 +583,9 @@
   function cardHtml(p){
     // You cannot vote on your own prompt (the API rejects it), so don't offer
     // the control — a button that always errors is worse than no button.
-    var mine = p.isMine || (state.me && p.authorId === state.me.id);
+    // isMine comes from the server; the author's uid no longer does (it
+    // decodes to their email address).
+    var mine = !!p.isMine;
     // The blanks count is gone: they are visible in the snippet now, picked
     // out in colour, which says it better than a pill reading "2 BLANKS".
     var chips = platformChips(p)
@@ -518,7 +608,9 @@
       + '<div class="psnippet" data-open="1">' + snippet(p.body) + '</div>'
       + '<div class="chips">' + chips + '</div>'
       + '<div class="pmeta">'
-      +   '<span>' + esc(p.authorName) + '</span>'
+      +   (p.authorKey && p.visibility === 'public'
+            ? '<button class="byline" data-author="' + esc(p.authorKey) + '">' + esc(p.authorName) + '</button>'
+            : '<span>' + esc(p.authorName) + '</span>')
       +   '<span>' + ago(p.createdAt) + '</span>'
       +   (p.copyCount ? '<span>' + fmt(p.copyCount) + ' copied</span>' : '')
       +   (p.saved ? '<span style="color:var(--tint); font-weight:600;">Saved</span>' : '')
@@ -574,11 +666,13 @@
     return api('/api/my/prompts').then(function(d){
       state.mine = d.mine || []; state.saved = d.saved || [];
       if (state.scope !== 'all') renderList();
+      celebrate(d.milestones);
     }).catch(function(){});
   }
 
   // ---- detail ------------------------------------------------------------
   function openPrompt(id){
+    go('/p/' + encodeURIComponent(id));
     show('detailView');
     $('dTitle').textContent = 'Loading…';
     $('dBody').textContent = '';
@@ -600,12 +694,20 @@
       + (p.visibility === 'private' ? '<span class="chip priv">Private</span>' : '')
       + (p.models || []).map(function(m){ return '<span class="chip tag">' + esc(m) + '</span>'; }).join('')
       + (p.tags || []).map(function(t){ return '<span class="chip tag">#' + esc(t) + '</span>'; }).join('');
-    $('dStats').innerHTML = '<span>by <b>' + esc(p.authorName) + '</b></span>'
+    $('dStats').innerHTML = '<span>by '
+      + (p.authorKey && p.visibility === 'public'
+        ? '<button class="byline" id="dAuthor" style="font-weight:700; color:var(--label);">' + esc(p.authorName) + '</button>'
+        : '<b>' + esc(p.authorName) + '</b>') + '</span>'
       + '<span><b>' + fmt(p.score) + '</b> score</span>'
       + '<span><b>' + fmt(p.copyCount) + '</b> copied</span>'
       + '<span><b>' + fmt(p.saveCount) + '</b> saved</span>'
       + '<span><b>' + fmt(p.remixCount) + '</b> remixes</span>'
       + '<span>' + ago(p.createdAt) + '</span>';
+    var au = $('dAuthor');
+    if (au) au.addEventListener('click', function(){ openAuthor(p.authorKey); });
+    // Only a public prompt has a link worth sharing: a private one opens for
+    // nobody else, and its preview is deliberately the generic one.
+    $('dShare').hidden = p.visibility !== 'public';
     if (p.remixOf){
       $('dRemix').hidden = false;
       $('dRemix').innerHTML = 'Remixed from <button class="linkbtn" id="remixLink">'
@@ -752,6 +854,128 @@
       $('eSaveBtn').disabled = false;
       $('eStatus').innerHTML = '<span style="color:var(--red)">' + esc(e.message) + '</span>';
     });
+  }
+
+  // ---- stats, badges, author pages (2026-09-26) ---------------------------
+  var MEDALS = { 'first-prompt':'NEW', 'five-prompts':'5', 'first-copy':'1', 'copies-100':'100',
+    'copies-1000':'1K', 'saved-50':'50', 'remixed-10':'10x', 'trending-1':'#1' };
+  function medal(id){ return '<span class="medal" aria-hidden="true">' + esc(MEDALS[id] || '\u2605') + '</span>'; }
+  function shortNum(n){ return n >= 1000 ? (Math.round(n / 100) / 10) + 'K' : String(n); }
+
+  /** Share a link: the phone's share sheet where there is one, else copy. */
+  function shareLink(path, title, statusEl){
+    var url = location.origin + path;
+    if (navigator.share){
+      navigator.share({ title: title, url: url }).catch(function(){});
+      return;
+    }
+    copyText(url).then(function(){
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--green)">Link copied \u2014 it unfolds into a card when pasted.</span>';
+    }).catch(function(e){ if (statusEl) statusEl.textContent = e.message; });
+  }
+
+  function openStats(){
+    if (needsAccount('listNote')) return;
+    go('/');
+    show('statsView');
+    $('sHero').innerHTML = '<p class="muted"><span class="spinner"></span> Loading\u2026</p>';
+    $('sBadges').innerHTML = ''; $('sPublic').innerHTML = ''; $('sBestWrap').hidden = true;
+    api('/api/my/stats').then(function(d){
+      var t = d.totals || {};
+      $('sHero').innerHTML = t.prompts
+        ? '<p class="hero-stat">Your prompts were copied <b>' + fmt(t.copies) + '</b> time' + (t.copies === 1 ? '' : 's')
+          + ', saved <b>' + fmt(t.saves) + '</b>, remixed <b>' + fmt(t.remixes) + '</b>.</p>'
+          + (d.rank ? '<span class="rankchip">\u2728 ' + esc(d.rank.label) + '</span>' : '')
+          + '<div class="tiles">'
+          + '<div class="tile"><b>' + fmt(t.copies) + '</b><span>copies</span></div>'
+          + '<div class="tile"><b>' + fmt(t.saves) + '</b><span>saves</span></div>'
+          + '<div class="tile"><b>' + fmt(t.remixes) + '</b><span>remixes</span></div>'
+          + '<div class="tile"><b>' + fmt(t.prompts) + '</b><span>published</span></div>'
+          + '</div>'
+        : '<p class="hero-stat">You haven\u2019t published a public prompt yet.</p>'
+          + '<p class="muted" style="margin-top:6px;">Publish one and this is where you\u2019ll see it get copied, saved and remixed.</p>'
+          + '<button class="btn btn-primary" id="sFirst" style="margin-top:10px;">Publish a prompt</button>';
+      var first = $('sFirst');
+      if (first) first.addEventListener('click', function(){ openEditor('new', {}); });
+
+      $('sBestWrap').hidden = !d.best;
+      $('sBest').innerHTML = d.best ? cardHtml(d.best) : '';
+
+      var earned = (d.badges || []).filter(function(b){ return b.earned; }).length;
+      $('sBadges').innerHTML = (d.badges || []).map(function(b){
+        var pct = b.progress && b.progress.need ? Math.round(100 * b.progress.have / b.progress.need) : 0;
+        return '<div class="badge' + (b.earned ? '' : ' locked') + '">'
+          + medal(b.id)
+          + '<div class="bname">' + esc(b.name) + '</div>'
+          + '<div class="bhint">' + (b.earned ? 'Earned' : esc(b.hint)) + '</div>'
+          + (!b.earned && b.progress && b.progress.need > 1
+            ? '<div class="bar" title="' + fmt(b.progress.have) + ' of ' + fmt(b.progress.need) + '"><i style="width:' + pct + '%"></i></div>'
+              + '<div class="bhint">' + fmt(b.progress.have) + ' / ' + fmt(b.progress.need) + '</div>'
+            : '')
+          + '</div>';
+      }).join('');
+      $('sBadges').setAttribute('aria-label', earned + ' of ' + (d.badges || []).length + ' badges earned');
+
+      var priv = d.privateCount
+        ? ' Your ' + d.privateCount + ' private prompt' + (d.privateCount === 1 ? ' is' : 's are') + ' never shown there or counted here.'
+        : ' Private prompts are never shown there or counted here.';
+      $('sPublic').innerHTML = d.publicPath
+        ? '<p style="font-weight:700;">Your public page</p><p class="muted">Your public prompts and badges, under your name ('
+          + esc(d.byline) + '). No email, no rank.' + esc(priv) + '</p>'
+          + '<div class="actions"><button class="btn btn-ghost" id="sOpenPage">Open it</button>'
+          + '<button class="btn btn-ghost" id="sSharePage">Share it</button></div><p class="muted" id="sShareStatus" style="margin-top:8px;"></p>'
+        : '<p class="muted">Once you publish a public prompt you get a page to share, showing your public prompts and badges.'
+          + esc(priv) + '</p>';
+      var op = $('sOpenPage');
+      if (op) op.addEventListener('click', function(){ openAuthor(d.publicPath.slice(3)); });
+      var sp = $('sSharePage');
+      if (sp) sp.addEventListener('click', function(){ shareLink(d.publicPath, d.byline + ' on Spellbook', $('sShareStatus')); });
+    }).catch(function(e){ $('sHero').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>'; });
+  }
+
+  function openAuthor(key){
+    go('/u/' + encodeURIComponent(key));
+    show('authorView');
+    $('auHead').innerHTML = '<p class="muted"><span class="spinner"></span> Loading\u2026</p>';
+    $('auList').innerHTML = '';
+    api('/api/authors/' + encodeURIComponent(key)).then(function(a){
+      var t = a.totals || {};
+      var initial = (String(a.byline || '?').trim().charAt(0) || '?').toUpperCase();
+      $('auHead').innerHTML = '<div class="author-head"><div class="avatar" aria-hidden="true">' + esc(initial) + '</div><div style="min-width:0;">'
+        + '<h2>' + esc(a.byline) + '</h2>'
+        + '<p class="muted" style="margin:2px 0 0;">' + fmt(t.prompts) + ' public prompt' + (t.prompts === 1 ? '' : 's')
+        + ' \u00b7 copied ' + fmt(t.copies) + ' time' + (t.copies === 1 ? '' : 's')
+        + ' \u00b7 saved ' + fmt(t.saves) + ' \u00b7 remixed ' + fmt(t.remixes) + '</p></div></div>'
+        + ((a.badges || []).length ? '<div class="badge-row">' + a.badges.map(function(b){
+            return '<span class="badge-chip" title="' + esc(b.hint) + '">' + medal(b.id) + esc(b.name) + '</span>';
+          }).join('') + '</div>' : '')
+        + (a.isMe ? '<p class="muted" style="margin-top:12px;">This is your public page. Only public prompts appear here.</p>' : '')
+        + '<div class="actions"><button class="btn btn-ghost" id="auShare">Share</button></div>'
+        + '<p class="muted" id="auStatus" style="margin-top:8px;"></p>';
+      $('auShare').addEventListener('click', function(){ shareLink('/u/' + a.key, a.byline + ' on Spellbook', $('auStatus')); });
+      $('auList').innerHTML = (a.prompts || []).map(cardHtml).join('');
+    }).catch(function(e){ $('auHead').innerHTML = '<div class="banner err">' + esc(e.message) + '</div>'; });
+  }
+
+  /** "Copied 100 times" - once, the next time the author is here. The server
+   *  decides the milestone and remembers it was shown; the page only says so. */
+  function celebrate(list){
+    if (!list || !list.length || $('toast')) return;
+    var top = list[0];
+    var more = list.length - 1;
+    var el = document.createElement('div');
+    el.className = 'toast'; el.id = 'toast'; el.setAttribute('role', 'status');
+    el.innerHTML = '<span class="medal" aria-hidden="true">' + esc(shortNum(top.milestone)) + '</span>'
+      + '<div style="min-width:0;"><p>\u201c' + esc(top.title) + '\u201d has been copied <b>'
+      + fmt(top.milestone) + ' times</b>.' + (more ? ' And ' + more + ' more of yours hit a milestone.' : '') + '</p>'
+      + '<button class="linkbtn" id="toastStats">See your stats</button></div>'
+      + '<button class="x" id="toastX" aria-label="Dismiss">&times;</button>';
+    document.body.appendChild(el);
+    var close = function(){ if (el.parentNode) el.parentNode.removeChild(el); };
+    $('toastX').addEventListener('click', close);
+    $('toastStats').addEventListener('click', function(){ close(); openStats(); });
+    setTimeout(close, 12000);
+    api('/api/my/milestones/seen', { method:'POST', body:{ ids: list.map(function(m){ return m.id; }) } }).catch(function(){});
   }
 
   // ---- account -----------------------------------------------------------
@@ -925,9 +1149,19 @@
     if (!state.me) { window.location.href = '/login'; return; }
     openEditor('new', {});
   });
-  $('detailBack').addEventListener('click', function(){ show('listView'); });
-  $('editBack').addEventListener('click', function(){ show(state.current ? 'detailView' : 'listView'); });
-  $('acctBack').addEventListener('click', function(){ show('listView'); });
+  $('detailBack').addEventListener('click', home);
+  $('statsBack').addEventListener('click', home);
+  $('authorBack').addEventListener('click', home);
+  $('statsBtn').addEventListener('click', openStats);
+  $('dShare').addEventListener('click', function(){
+    var p = state.current; if (!p) return;
+    shareLink('/p/' + p.id, p.title, $('dStatus'));
+  });
+  window.addEventListener('popstate', route);
+  $('editBack').addEventListener('click', function(){
+    if (state.current) { go('/p/' + state.current.id); show('detailView'); } else home();
+  });
+  $('acctBack').addEventListener('click', home);
   $('acctBtn').addEventListener('click', openAccount);
   $('outBtn').addEventListener('click', function(){
     api('/api/auth/logout', { method:'POST' }).then(function(){ window.location.replace('/login'); });
@@ -963,12 +1197,14 @@
 
   // One listener for the whole list rather than per card, so re-rendering the
   // list never has to re-bind anything.
-  $('plist').addEventListener('click', function(e){
+  function listClicks(noteId){ return function(e){
     var card = e.target.closest('.pcard'); if (!card) return;
     var id = card.getAttribute('data-id');
+    var byline = e.target.closest('[data-author]');
+    if (byline){ openAuthor(byline.getAttribute('data-author')); return; }
     var voteBtn = e.target.closest('button[data-vote]');
     if (voteBtn){
-      if (needsAccount('listNote')) return;
+      if (needsAccount(noteId)) return;
       var want = Number(voteBtn.getAttribute('data-vote'));
       var pressed = voteBtn.getAttribute('aria-pressed') === 'true';
       api('/api/prompts/' + encodeURIComponent(id) + '/vote', { method:'POST', body:{ value: pressed ? 0 : want } })
@@ -978,11 +1214,14 @@
           if (up) up.setAttribute('aria-pressed', String(r.myVote === 1));
           if (down) down.setAttribute('aria-pressed', String(r.myVote === -1));
         })
-        .catch(function(err){ $('listNote').textContent = err.message; });
+        .catch(function(err){ $(noteId).textContent = err.message; });
       return;
     }
     openPrompt(id);
-  });
+  }; }
+  $('plist').addEventListener('click', listClicks('listNote'));
+  $('auList').addEventListener('click', listClicks('auStatus'));
+  $('sBest').addEventListener('click', listClicks('sShareStatus'));
 
   $('dCopy').addEventListener('click', function(){
     var p = state.current;
@@ -1010,7 +1249,7 @@
   $('dDelete').addEventListener('click', function(){
     if (!window.confirm('Delete this prompt? This cannot be undone.')) return;
     api('/api/prompts/' + encodeURIComponent(state.current.id), { method:'DELETE' })
-      .then(function(){ state.current = null; loadList(); loadMine(); show('listView'); })
+      .then(function(){ state.current = null; loadList(); loadMine(); home(); })
       .catch(function(e){ $('dStatus').textContent = e.message; });
   });
 
@@ -1132,11 +1371,13 @@
   api('/api/auth/me').then(function(d){
     state.me = d.signedIn ? d.user : null;
     paintMe();
+    route();
     return state.me ? Promise.all([loadList(), loadMine()]) : loadList();
   }).catch(function(){
     // Even the identity call failing should not leave a blank page: the
     // library is public, so try it anyway.
     paintMe();
+    route();
     loadList();
   });
 })();

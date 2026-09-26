@@ -32,6 +32,35 @@ const CATEGORIES = [
   'productivity', 'learning', 'fun', 'other',
 ];
 
+// Display names for the closed platform list. The page has its own copy for
+// the browser; this one is for what the server draws (link-preview cards).
+const PLATFORM_LABELS = {
+  claude: 'Claude', 'claude-code': 'Claude Code', chatgpt: 'ChatGPT', gemini: 'Gemini',
+  copilot: 'Copilot', cursor: 'Cursor', perplexity: 'Perplexity', grok: 'Grok',
+  midjourney: 'Midjourney', api: 'API / SDK', local: 'Local model', other: 'Other',
+};
+
+/**
+ * The name printed under a prompt, never an email address.
+ *
+ * The byline used to be `displayName || email`, and a shared-account session
+ * with no display name bridges in with its email AS the display name - so an
+ * author who never chose a name published their full address on every card.
+ * Anything with an @ is cut to the part before it, which is what registration
+ * already offers as the default name. Control characters and bidi overrides
+ * go too: this string is drawn into HTML meta tags and a PNG.
+ * (2026-09-26)
+ */
+function publicByline(name) {
+  const s = String(name == null ? '' : name)
+    .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const at = s.indexOf('@');
+  const cut = (at === -1 ? s : s.slice(0, at)).trim().slice(0, 60);
+  return cut || 'anonymous';
+}
+
 function clean(v, max) {
   return String(v == null ? '' : v).trim().slice(0, max);
 }
@@ -129,13 +158,13 @@ function bodyToPromptFields(body, user) {
       variables: extractVariables(text),
       visibility: body.visibility === 'private' ? 'private' : 'public',
       authorId: user.uid,
-      authorName: user.displayName || user.email,
+      authorName: publicByline(user.displayName || user.email),
     },
   };
 }
 
 module.exports = {
   trendScore,
-  PLATFORMS, CATEGORIES,
+  PLATFORMS, CATEGORIES, PLATFORM_LABELS, publicByline,
   clean, pickList, cleanTags, extractVariables, computeTrend, bodyToPromptFields,
 };

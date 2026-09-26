@@ -36,6 +36,13 @@ someone actually using the thing, where a vote is only an opinion. Trending
 weights copies above saves above votes, then decays with age, so the front page
 turns over instead of freezing on whatever once went round a group chat.
 
+**See how your prompts are doing.** Your stats: copies, saves and remixes
+across your public prompts, your best one, a "Top 5% author" chip once there
+are twenty authors to be in the top of, and badges — locked ones shown with how
+to earn them. A public page at `/u/<key>` shows your public prompts and badges
+under your byline. A prompt link (`/p/<id>`) unfolds into a picture card when
+pasted anywhere. No model call in any of it.
+
 **Draft or improve with Claude** (`claude-opus-5`). Describe what you need and
 get a draft; or ask for an existing prompt to be tightened. Both return a
 *proposal* rendered as Apply/Discard — nothing is written until you tap Apply.
@@ -114,7 +121,10 @@ no mail sender on this project, so there is no reset link — that's the trade.
 - `prompts/<id>` — `{title, body, summary, platforms[], models[], category,
   tags[], variables[], authorId, authorName, visibility, score, upvotes,
   downvotes, copyCount, saveCount, remixCount, viewCount, remixOf, trendScore,
-  createdAt, updatedAt}`.
+  createdAt, updatedAt, authorKey, celebratedCopies, trendingTopAt}`. The last
+  three are server-written only: the opaque public author handle, the highest
+  copy milestone the author has been shown, and when the prompt was first #1 on
+  Trending. See CLAUDE.md, "Author stats, badges and link previews".
   - `prompts/<id>/votes/<uid>` — `{value: 1|-1, at}`. One per account.
 - `control/rollup` — `{lastRunAt, scanned, rescored}` from the last cron tick.
 
