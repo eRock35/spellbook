@@ -50,8 +50,10 @@ class FakeFirestore {
       },
       doc(id) {
         const key = name + '/' + (id || 'auto' + Math.random().toString(36).slice(2));
-        return { id: key.slice(name.length + 1),
-          async get() { const d = store.get(key); return { exists: d !== undefined, id: key.slice(name.length + 1), data: () => d }; },
+        const ref = { id: key.slice(name.length + 1),
+          // A real snapshot carries its ref; the remix route updates the
+          // parent through it (untested, and so unnoticed, until 2026-09-27).
+          async get() { const d = store.get(key); return { exists: d !== undefined, id: key.slice(name.length + 1), data: () => d, ref }; },
           async set(v, o) { noNestedArrays(v); store.set(key, o && o.merge ? applyIncrements(store.get(key), v) : JSON.parse(JSON.stringify(v))); },
           /** Firestore's write-if-absent, and the cheapest test-and-set the
            *  database offers. Three things lean on it: accounts.js, to make a
@@ -75,6 +77,7 @@ class FakeFirestore {
           async update(v) { noNestedArrays(v); store.set(key, applyIncrements(store.get(key), v)); },
           async delete() { store.delete(key); },
           collection: (sub) => new FakeFirestore({ databaseId: 'sub' }).collection(key + '/' + sub) };
+        return ref;
       },
     });
     return mk();

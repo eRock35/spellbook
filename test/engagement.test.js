@@ -89,7 +89,7 @@ const SECRET_BODY = 'TOPSECRET-PRIVATE-BODY {{thing}}';
   ok('stats: every badge listed, some locked with hints', s.badges.length === stats.BADGES.length
     && s.badges.some((b) => !b.earned && b.hint) && s.badges.find((b) => b.id === 'copies-1000').earned);
   ok('stats: a public page to share', s.publicPath === '/u/' + listed.authorKey, s.publicPath);
-  ok('stats: byline, not email', s.byline === 'Owner Olga');
+  ok('stats: byline, not email - the first word of the name', s.byline === 'Owner', s.byline);
   r = await get('/api/my/stats', stranger);
   const ss = await r.json();
   ok('an author with no prompts: zero totals, no rank, no page', ss.totals.prompts === 0 && ss.rank === null && ss.publicPath === null);
@@ -106,7 +106,7 @@ const SECRET_BODY = 'TOPSECRET-PRIVATE-BODY {{thing}}';
     !text.includes(SECRET_TITLE) && !text.includes('TOPSECRET') && !text.includes(ownerUid) && !text.includes('owner@'));
   ok('...no rank on the public page', a.rank === undefined);
   ok('...earned badges only', a.badges.length > 0 && a.badges.every((b) => b.earned === undefined && b.name));
-  ok('...byline shown', a.byline === 'Owner Olga');
+  ok('...byline shown', a.byline === 'Owner', a.byline);
   r = await get('/api/authors/' + key, owner);
   ok('the author sees it is theirs', (await r.json()).isMe === true);
   r = await get('/api/authors/' + key, stranger);
@@ -169,7 +169,7 @@ const SECRET_BODY = 'TOPSECRET-PRIVATE-BODY {{thing}}';
   html = await (await get('/')).text();
   ok('...and the front page links it', metas(html).includes(`${B}/og.png`) && metas(html).includes('og:title" content="Spellbook"'));
   html = await (await get('/u/' + key)).text();
-  ok('an author link unfolds with their byline', metas(html).includes('Owner Olga on Spellbook') && metas(html).includes('2 public prompts, copied 1,240 times'), metas(html));
+  ok('an author link unfolds with their byline', metas(html).includes('Owner on Spellbook') && metas(html).includes('2 public prompts, copied 1,240 times'), metas(html));
   ok('...and no email or uid', !html.includes('owner@') && !html.includes(ownerUid));
 
   // A hostile byline: escaped in the tags, harmless in the card.
@@ -177,7 +177,7 @@ const SECRET_BODY = 'TOPSECRET-PRIVATE-BODY {{thing}}';
   const ev = await mk({ title: 'Evil‮ \u0007 title \u{1F525}', body: 'An ordinary body here' }, evil);
   const evKey = stats.authorKey(Buffer.from('evil@example.com').toString('base64url'), process.env.SESSION_SECRET);
   html = await (await get('/u/' + evKey)).text();
-  ok('a hostile byline is escaped in author tags', !html.includes('<script>x()') && metas(html).includes('&quot;&gt;&lt;script&gt;x()'), metas(html));
+  ok('a hostile byline reaches the author tags as letters only', !html.includes('<script>x()') && metas(html).includes('scriptxscript on Spellbook'), metas(html));
   html = await (await get('/p/' + ev.id)).text();
   ok('control and bidi characters never reach a tag', !/[\u0007‮]/.test(metas(html)));
   r = await get('/p/' + ev.id + '.png');

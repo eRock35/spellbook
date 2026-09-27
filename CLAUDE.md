@@ -323,6 +323,40 @@ own-door accounts, the rollup).
 - Two feature suites reopen the old door with `NODE_ENV=test` +
   `SPELLBOOK_OWN_REGISTRATION=1`; production sets neither.
 
+## Security review fixes (2026-09-27)
+
+`test/security.test.js` holds all of these.
+
+- **Bylines are never an address or any part of one.** Cutting at the `@`
+  (above) still left the local part: registration filled an empty display
+  name with it, and the shared-account bridge fell back to the email, so
+  "erik.strong" was on cards and `/u/<key>`. Now, as in the football app and
+  Hopscotch, a byline is the **first word of a real display name**, or **"A
+  Spellbook writer"**; a name holding an `@` or equal to the email's local
+  part is no name (`promptfields.publicByline(name, email)`). A prompt stores
+  the whole cleaned name (`authorNameFor`, `''` for none) and every read cuts
+  it with `bylineFor(doc)`, which checks it against the address the
+  `authorId` names - so rows written before this are covered without a
+  migration. Neither registration nor the bridge fills a name from the
+  address any more (the page's own "signed in as" still shows the email to
+  its owner). A remix stores its parent's **checked** byline
+  (`remixOf.bylineChecked`); an older remix reads as no name until the rollup
+  checks it against the parent.
+- **`sendIndex` uses a replacer function.** In a replacement *string*, `` $` ``,
+  `$&`, `$'` and `$1` are patterns, so a prompt titled with one spliced parts
+  of the page into its own head.
+- **Every response** carries `X-Content-Type-Options: nosniff` and
+  `Content-Security-Policy: frame-ancestors 'self'` plus the landing page's two
+  hosts, which preview each app in an iframe.
+- **The cron key** is compared in constant time (`sameSecret`).
+- **Own-door sign-in guessing**: ten 401s from one address on
+  `/api/auth/login` in fifteen minutes and it answers 429 to that address
+  until the window passes, a right password included; a success clears the
+  count. Per instance, in memory. `trust proxy` is `1`, not `true`, so a
+  client-written X-Forwarded-For cannot choose the address it is keyed by.
+- The test harness's `doc().get()` now carries `ref`, as a real snapshot does;
+  the remix route updates its parent through it and had no test until now.
+
 ## Commit and PR conventions
 
 **Never put a Claude session link in anything pushed to GitHub.** No

@@ -254,7 +254,9 @@ function createAccounts(opts) {
         try {
           await users().doc(uid).create({
             email,
-            displayName: displayName || email.split('@')[0],
+            // No default from the address (2026-09-27): the local part went
+            // out as a public byline. Empty means "A Spellbook writer".
+            displayName,
             passwordSalt: salt,
             passwordHash: hash,
             // The admin is the only account that starts approved; everyone

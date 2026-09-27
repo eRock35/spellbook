@@ -128,14 +128,39 @@ test('the author key is opaque, stable, and not the uid', () => {
   assert.strictEqual(st.authorKey('', 's'), null);
 });
 
-test('a byline is never an email address', () => {
-  assert.strictEqual(pf.publicByline('erik@example.com'), 'erik');
-  assert.strictEqual(pf.publicByline('  Ada ‮Lovelace\u0007 '), 'Ada Lovelace');
-  assert.strictEqual(pf.publicByline(''), 'anonymous');
-  assert.strictEqual(pf.publicByline('@example.com'), 'anonymous');
-  const f = pf.bodyToPromptFields({ title: 't', body: 'long enough body', platforms: ['claude'] },
-    { uid: 'u', email: 'shy@example.com' });
-  assert.strictEqual(f.fields.authorName, 'shy');
+test('a byline is never an email address, nor any part of one (2026-09-27)', () => {
+  const W = 'A Spellbook writer';
+  assert.strictEqual(pf.NO_NAME, W);
+  assert.strictEqual(pf.publicByline('erik@example.com'), W, 'an address is no name, not its local part');
+  assert.strictEqual(pf.publicByline('erik.strong', 'erik.strong@example.com'), W, 'the local part is no name');
+  assert.strictEqual(pf.publicByline('Erik.Strong', 'erik.strong@example.com'), W, '...whatever its case');
+  assert.strictEqual(pf.publicByline('Erik Strong', 'erik.strong@example.com'), 'Erik', 'a real name: its first word');
+  assert.strictEqual(pf.publicByline('  Ada ‮Lovelace\u0007 '), 'Ada', 'controls and bidi out, first word');
+  assert.strictEqual(pf.publicByline("Zoë O'Brien-Smith"), 'Zoë');
+  assert.strictEqual(pf.publicByline("O'Brien-Smith"), "O'Brien-Smith");
+  assert.strictEqual(pf.publicByline('"><script>x()</script>'), 'scriptxscript', 'no markup survives');
+  assert.strictEqual(pf.publicByline(''), W);
+  assert.strictEqual(pf.publicByline(null), W);
+  assert.strictEqual(pf.publicByline('<>!!'), W, 'nothing left is no name');
+  assert.strictEqual(pf.publicByline('@example.com'), W);
+  // A stored prompt is checked against the address its authorId names.
+  const uid = Buffer.from('erik.strong@example.com').toString('base64url');
+  assert.strictEqual(pf.emailOfUid(uid), 'erik.strong@example.com');
+  assert.strictEqual(pf.emailOfUid('spellbook-seed'), '');
+  assert.strictEqual(pf.bylineFor({ authorName: 'erik.strong', authorId: uid }), W, 'an old row bylined with the local part');
+  assert.strictEqual(pf.bylineFor({ authorName: 'Erik Strong', authorId: uid }), 'Erik');
+  assert.strictEqual(pf.bylineFor({ authorName: 'Spellbook', authorId: 'spellbook-seed' }), 'Spellbook', 'the seeds keep their byline');
+  // Stored whole (or empty for no name) and cut to a byline on read.
+  const shyUid = Buffer.from('shy@example.com').toString('base64url');
+  const stored = (user) => pf.bodyToPromptFields({ title: 't', body: 'long enough body', platforms: ['claude'] }, user).fields;
+  let f = stored({ uid: shyUid, email: 'shy@example.com' });
+  assert.strictEqual(f.authorName, '', 'no display name: nothing stored, never the local part');
+  assert.strictEqual(pf.bylineFor(f), W);
+  f = stored({ uid: shyUid, email: 'shy@example.com', displayName: 'shy' });
+  assert.strictEqual(f.authorName, '', 'a display name that is the local part: the same');
+  f = stored({ uid: shyUid, email: 'shy@example.com', displayName: 'Shy Violet' });
+  assert.strictEqual(f.authorName, 'Shy Violet');
+  assert.strictEqual(pf.bylineFor(f), 'Shy', 'a first name that happens to match the local part is still their name');
 });
 
 // --- cards ---------------------------------------------------------------------

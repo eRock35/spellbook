@@ -10,6 +10,7 @@
 
 
 const express = require('express');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Firestore, FieldValue } = require('@google-cloud/firestore');
@@ -20,7 +21,7 @@ const identityLib = require('./identity');
 const identityStore = require('./identity-store');
 const {
   PLATFORMS, CATEGORIES, clean, pickList, cleanTags, extractVariables,
-  computeTrend, bodyToPromptFields, publicByline,
+  computeTrend, bodyToPromptFields, publicByline, bylineFor, NO_NAME,
 } = require('./promptfields');
 const stats = require('./authorstats');
 const cards = require('./cards');
@@ -45,7 +46,64 @@ const db = new Firestore({ projectId: PROJECT_ID, databaseId: FIRESTORE_DB });
 
 const app = express();
 app.use(express.json({ limit: '256kb' }));
-app.set('trust proxy', true);
+// `1`, not `true` (2026-09-27): with `true` a client could write its own
+// X-Forwarded-For and choose req.ip, which the sign-in limit below keys on.
+// Cloud Run's front end is the one hop in front of this app.
+app.set('trust proxy', 1);
+
+// Every response (2026-09-27). nosniff so nothing served here is read as a
+// type it was not sent as; frame-ancestors so only this app and the landing
+// page - which previews each app in an iframe - may frame it. A signed-in app
+// inside a hostile page is the setup for clickjacking.
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Content-Security-Policy', "frame-ancestors 'self' https://strongtechnicalconsulting.com https://www.strongtechnicalconsulting.com");
+  next();
+});
+
+/** Constant-time comparison of two secrets of any length. */
+function sameSecret(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string' || !a || !b) return false;
+  const h = (v) => crypto.createHash('sha256').update(v).digest();
+  return crypto.timingSafeEqual(h(a), h(b));
+}
+
+/*
+ * Failed own-door sign-ins, per client address (2026-09-27). Ten failures in
+ * fifteen minutes and /api/auth/login answers 429 to that address until the
+ * window passes - a right password included, or the limit would only slow a
+ * guesser down. A success clears the count. In memory, per instance. The
+ * shared account's own sign-in is identity's to limit, not this app's.
+ */
+const LOGIN_FAIL_LIMIT = 10;
+const LOGIN_FAIL_WINDOW_MS = 15 * 60 * 1000;
+const loginFailures = new Map(); // ip -> { n, since }
+
+function loginBlocked(ip) {
+  const e = loginFailures.get(ip);
+  if (!e) return false;
+  if (Date.now() - e.since > LOGIN_FAIL_WINDOW_MS) { loginFailures.delete(ip); return false; }
+  return e.n >= LOGIN_FAIL_LIMIT;
+}
+
+app.post('/api/auth/login', (req, res, next) => {
+  const ip = req.ip || 'unknown';
+  if (loginBlocked(ip)) return res.status(429).json({ error: 'Too many sign-in attempts. Try again in 15 minutes.' });
+  res.on('finish', () => {
+    if (res.statusCode === 200) { loginFailures.delete(ip); return; }
+    if (res.statusCode !== 401) return;
+    const now = Date.now();
+    let e = loginFailures.get(ip);
+    if (!e || now - e.since > LOGIN_FAIL_WINDOW_MS) e = { n: 0, since: now };
+    e.n++;
+    loginFailures.set(ip, e);
+    if (loginFailures.size > 10000) {
+      for (const [k, v] of loginFailures) if (now - v.since > LOGIN_FAIL_WINDOW_MS) loginFailures.delete(k);
+      if (loginFailures.size > 10000) loginFailures.clear();
+    }
+  });
+  next();
+});
 
 // Sorting and the bounded browse window. The taxonomy and every pure field
 // rule live in promptfields.js, which is testable without a Firestore.
@@ -134,7 +192,10 @@ async function bridgeSharedAccount(req, _res, next) {
   } catch (e) { own = null; }
   req.user = Object.assign({}, own || {}, u, {
     uid,
-    displayName: (own && own.displayName) || u.displayName || u.email,
+    // Never the email (2026-09-27): it became the public byline's source for
+    // anyone who had not chosen a name. The page's own "signed in as" falls
+    // back to the address by itself; nothing public does.
+    displayName: (own && own.displayName) || u.displayName || '',
     // Only the shared account's owner flag (2026-09-27). A local isAdmin
     // could be set by registering an unverified address, so it no longer
     // counts for a shared session.
@@ -190,8 +251,7 @@ function requireSharedAccount(req, res, next) {
 }
 
 function requireLoginOrCron(req, res, next) {
-  const key = req.get('X-Cron-Key');
-  if (CRON_SECRET && key && key === CRON_SECRET) {
+  if (CRON_SECRET && sameSecret(req.get('X-Cron-Key') || '', CRON_SECRET)) {
     req.isCron = true;
     return next();
   }
@@ -231,9 +291,24 @@ const keyFor = (uid) => stats.authorKey(uid, SESSION_SECRET);
  * network tab. `isMine` answers the only question the page used it for, and
  * `authorKey` is the opaque handle that links to /u/<key>.
  */
+/** A remix's "remix of ... by" name. Written since 2026-09-27 as a checked
+ *  byline (bylineChecked); an older one holds the parent's raw authorName,
+ *  which may be an email's local part, and a remix cannot check it without
+ *  the parent's uid - so it reads as no name until the rollup rewrites it. */
+function remixByline(r) {
+  return r.bylineChecked ? publicByline(r.authorName) : NO_NAME;
+}
+
+/** What a remix stores as its parent's name: the checked byline, or '' for
+ *  none (storing "A Spellbook writer" would read back as its first word). */
+function remixNameFor(parent) {
+  const b = parent ? bylineFor(parent) : NO_NAME;
+  return b === NO_NAME ? '' : b;
+}
+
 function publicPrompt(id, d, extra) {
   const remixOf = d.remixOf && typeof d.remixOf === 'object'
-    ? { id: d.remixOf.id || null, title: d.remixOf.title || '', authorName: publicByline(d.remixOf.authorName) }
+    ? { id: d.remixOf.id || null, title: d.remixOf.title || '', authorName: remixByline(d.remixOf) }
     : null;
   return Object.assign({
     id,
@@ -246,7 +321,7 @@ function publicPrompt(id, d, extra) {
     tags: d.tags || [],
     variables: d.variables || [],
     authorKey: d.authorId ? keyFor(d.authorId) : null,
-    authorName: publicByline(d.authorName),
+    authorName: bylineFor(d),
     visibility: d.visibility || 'public',
     score: d.score || 0,
     upvotes: d.upvotes || 0,
@@ -436,7 +511,9 @@ app.post('/api/prompts', requireLogin, async (req, res) => {
     if (remixOfId) {
       const parent = await prompts().doc(remixOfId).get();
       if (parent.exists && parent.data().visibility === 'public') {
-        base.remixOf = { id: parent.id, title: parent.data().title, authorName: parent.data().authorName };
+        // The byline is worked out HERE, against the parent's author's
+        // address, because a remix does not know that author's uid on read.
+        base.remixOf = { id: parent.id, title: parent.data().title, authorName: remixNameFor(parent.data()), bylineChecked: true };
         await parent.ref.update({ remixCount: FieldValue.increment(1) }).catch(() => {});
       }
     }
@@ -542,7 +619,7 @@ app.post('/api/prompts/:id/save', requireLogin, async (req, res) => {
       await saveRef.set({
         savedAt: new Date().toISOString(),
         title: found.data.title,
-        authorName: found.data.authorName,
+        authorName: bylineFor(found.data),
       });
       await found.ref.update({ saveCount: FieldValue.increment(1) });
     } else if (!wantSaved && existing.exists) {
@@ -731,6 +808,7 @@ app.post('/api/cron/rollup', requireCronOrAdmin, async (req, res) => {
     }
     // Batched in chunks because a Firestore write batch caps at 500 and a
     // per-document update would be 500 round trips.
+    const byId = new Map(snap.docs.map((doc) => [doc.id, doc.data()]));
     let batch = db.batch();
     let inBatch = 0;
     for (const doc of snap.docs) {
@@ -743,6 +821,16 @@ app.post('/api/cron/rollup', requireCronOrAdmin, async (req, res) => {
       const key = d.authorId ? keyFor(d.authorId) : null;
       if (key && d.authorKey !== key) patch.authorKey = key;
       if (top && top.doc.id === doc.id && !d.trendingTopAt) patch.trendingTopAt = new Date().toISOString();
+      // A remix written before its byline was checked (2026-09-27) gets it
+      // checked against the parent's author, or no name if the parent is gone.
+      if (d.remixOf && typeof d.remixOf === 'object' && d.remixOf.id && !d.remixOf.bylineChecked) {
+        let parent = byId.get(d.remixOf.id);
+        if (!parent) {
+          const p = await prompts().doc(String(d.remixOf.id)).get().catch(() => null);
+          parent = p && p.exists ? p.data() : null;
+        }
+        patch.remixOf = Object.assign({}, d.remixOf, { authorName: remixNameFor(parent), bylineChecked: true });
+      }
       if (Object.keys(patch).length) {
         batch.update(doc.ref, patch);
         inBatch += 1;
@@ -804,7 +892,7 @@ app.get('/api/my/stats', requireLogin, async (req, res) => {
     const best = stats.bestPrompt(docs);
     const key = keyFor(uid);
     res.json({
-      byline: publicByline(req.user.displayName || req.user.email),
+      byline: publicByline(req.user.displayName, req.user.email),
       totals: t,
       privateCount: docs.length - t.prompts,
       best: best ? publicPrompt(best.id, best, { isMine: true }) : null,
@@ -883,7 +971,7 @@ app.get('/api/authors/:key', async (req, res) => {
       || String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     res.json({
       key: req.params.key,
-      byline: publicByline(newest(docs).authorName),
+      byline: bylineFor(newest(docs)),
       isMe: !!uid && docs[0].authorId === uid,
       totals: t,
       best: best ? publicPrompt(best.id, best) : null,
@@ -937,7 +1025,10 @@ function sendIndex(req, res, m) {
     + `<meta property="og:url" content="${e(m.url)}"><meta name="twitter:card" content="summary_large_image">\n`
     + `<meta name="twitter:title" content="${e(m.title)}"><meta name="twitter:description" content="${e(m.description)}">`
     + `<meta name="twitter:image" content="${e(m.image)}">`;
-  res.type('html').send(INDEX_HTML.replace('<title>Spellbook</title>', tags));
+  // A replacer FUNCTION, not a string (2026-09-27): in a replacement string
+  // `$&`, `$\``, `$'` and `$1` are patterns, so a prompt titled with one of
+  // them spliced pieces of the page into its own head.
+  res.type('html').send(INDEX_HTML.replace('<title>Spellbook</title>', () => tags));
 }
 
 async function publicPromptDoc(id) {
@@ -968,7 +1059,7 @@ app.get(/^\/p\/([A-Za-z0-9_-]{1,64})\.png$/, async (req, res) => {
     const key = `p:${d.id}:${d.updatedAt || ''}:${d.copyCount || 0}`;
     return sendPng(res, key, () => cards.promptSvg({
       title: d.title, platforms: d.platforms, copyCount: d.copyCount,
-      body: d.body, by: publicByline(d.authorName),
+      body: d.body, by: bylineFor(d),
     }), 600);
   } catch (err) {
     console.error('GET /p/:id.png', err);
@@ -999,7 +1090,7 @@ app.get(/^\/u\/([A-Za-z0-9_-]{16})$/, async (req, res) => {
   try { docs = await publicPromptsByKey(req.params[0]); } catch (err) { console.error('GET /u/:key meta', err.message); }
   if (!docs.length) return sendIndex(req, res, siteMeta(req));
   const t = stats.totals(docs);
-  const by = metaText(publicByline(newest(docs).authorName), 60);
+  const by = metaText(bylineFor(newest(docs)), 60);
   return sendIndex(req, res, {
     title: `${by} on Spellbook`,
     description: `${t.prompts} public prompt${t.prompts === 1 ? '' : 's'}, copied ${t.copies.toLocaleString('en-US')} time${t.copies === 1 ? '' : 's'}.`,

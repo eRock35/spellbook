@@ -41,24 +41,68 @@ const PLATFORM_LABELS = {
 };
 
 /**
- * The name printed under a prompt, never an email address.
+ * The name printed under a prompt, never an email address or any part of one.
  *
  * The byline used to be `displayName || email`, and a shared-account session
  * with no display name bridges in with its email AS the display name - so an
  * author who never chose a name published their full address on every card.
- * Anything with an @ is cut to the part before it, which is what registration
- * already offers as the default name. Control characters and bidi overrides
- * go too: this string is drawn into HTML meta tags and a PNG.
  * (2026-09-26)
+ *
+ * Cutting at the @ was not enough (2026-09-27): registration filled an empty
+ * name with the email's local part, so "erik.strong" went out on every card
+ * and on /u/<key> - half an address. Now, as in the football app and
+ * Hopscotch: the FIRST WORD of a real display name, or "A Spellbook writer".
+ * A name with an @ in it, or equal to the email's local part (pass `email`
+ * whenever it is known - bylineFor() derives it from a prompt's authorId), is
+ * no name at all. Control characters and bidi overrides go too, and anything
+ * but letters, digits, apostrophes, dots and hyphens: this string is drawn
+ * into HTML meta tags and a PNG.
  */
-function publicByline(name) {
-  const s = String(name == null ? '' : name)
+const NO_NAME = 'A Spellbook writer';
+
+function cleanName(name) {
+  return String(name == null ? '' : name)
     .replace(/[\u0000-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const at = s.indexOf('@');
-  const cut = (at === -1 ? s : s.slice(0, at)).trim().slice(0, 60);
-  return cut || 'anonymous';
+}
+
+/** A name that is really an address: empty, holding an @, or the local part. */
+function isNoName(s, email) {
+  if (!s || s.includes('@')) return true;
+  const local = String(email || '').split('@')[0].trim().toLowerCase();
+  return Boolean(local && s.toLowerCase() === local);
+}
+
+function publicByline(name, email) {
+  const s = cleanName(name);
+  if (isNoName(s, email)) return NO_NAME;
+  const first = s.split(' ')[0].replace(/[^\p{L}\p{M}\p{N}'\u2019.-]/gu, '').slice(0, 30);
+  return first || NO_NAME;
+}
+
+/** What a prompt stores as `authorName`: the display name, cleaned, or ''
+ *  when it is no name. Stored whole and cut to a byline on every read
+ *  (bylineFor), so the read can still compare it with the author's address. */
+function authorNameFor(user) {
+  const s = cleanName(user && user.displayName).slice(0, 80);
+  return isNoName(s, user && user.email) ? '' : s;
+}
+
+/** The email a uid names (a uid is base64url of the lowercased address), or
+ *  '' for one that is not an address, like the seeds' reserved id. */
+function emailOfUid(uid) {
+  try {
+    const e = Buffer.from(String(uid || ''), 'base64url').toString('utf8');
+    return /^[^@\s]+@[^@\s]+$/.test(e) ? e : '';
+  } catch (err) {
+    return '';
+  }
+}
+
+/** A stored prompt's byline, checked against its author's address. */
+function bylineFor(d) {
+  return publicByline(d && d.authorName, emailOfUid(d && d.authorId));
 }
 
 function clean(v, max) {
@@ -158,13 +202,13 @@ function bodyToPromptFields(body, user) {
       variables: extractVariables(text),
       visibility: body.visibility === 'private' ? 'private' : 'public',
       authorId: user.uid,
-      authorName: publicByline(user.displayName || user.email),
+      authorName: authorNameFor(user),
     },
   };
 }
 
 module.exports = {
   trendScore,
-  PLATFORMS, CATEGORIES, PLATFORM_LABELS, publicByline,
+  PLATFORMS, CATEGORIES, PLATFORM_LABELS, publicByline, bylineFor, authorNameFor, emailOfUid, NO_NAME,
   clean, pickList, cleanTags, extractVariables, computeTrend, bodyToPromptFields,
 };
