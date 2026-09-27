@@ -61,9 +61,19 @@ const jar = (r) => (r.headers.getSetCookie() || []).map((c) => c.split(';')[0]).
   r = await post('/api/auth/register', { email: 'boss@example.com', password: 'attacker-password-1' });
   ok('...including for the admin address', r.status === 410, String(r.status));
 
-  // The owner registers first, so they hold the owner flag.
+  // The owner registers first, and holds the owner flag once the address is
+  // CONFIRMED (2026-09-27: registering ADMIN_EMAIL alone proves nothing). The
+  // link lands on the landing; the same shared module confirms it here.
   r = await post('/api/id/register', { email: 'boss@example.com', password: 'the-real-owner-1' });
   const boss = jar(r);
+  const path = require('path');
+  const identityLib = require(path.join(__dirname, '..', 'identity.js'));
+  const landing = identityLib.create({ store: require(path.join(__dirname, '..', 'identity-store.js')).store, secret: () => process.env.IDENTITY_SESSION_SECRET, app: 'landing-stand-in' });
+  r = await get('/api/admin/users', boss);
+  ok('registering the admin address does not by itself reach the admin surface', r.status === 404, String(r.status));
+  const bossUid = Buffer.from('boss@example.com').toString('base64url');
+  const confirmed = await landing.confirmEmail(identityLib.makeVerifyToken(bossUid, 'boss@example.com', process.env.IDENTITY_SESSION_SECRET));
+  ok('confirming it grants the owner flag', confirmed.ok === true && confirmed.admin === true, JSON.stringify(confirmed));
   r = await get('/api/admin/users', boss);
   ok('the owner (shared-account admin) reaches the admin surface', r.status === 200, String(r.status));
 
