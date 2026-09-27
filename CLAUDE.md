@@ -301,6 +301,28 @@ to open a browser.
   (billed per request: a write left running after it can stall). A failed
   counter still never fails the read.
 
+## Accounts: the shared account only (2026-09-27)
+
+A security review found that Spellbook's own sign-up and the shared account
+key an account by the same uid (base64url of the email) and neither proves the
+email. So whoever registered an address on the door its owner had not used
+became that person, and registering `ADMIN_EMAIL` through Spellbook's own
+sign-up made you Spellbook's admin (every user's email, password resets for
+own-door accounts, the rollup).
+
+- `POST /api/auth/register` answers 410. New accounts are shared accounts
+  (`/api/id/register`); the login page's "Create account" posts there and its
+  "Sign in" tries the shared account first. Nobody had an own-door account.
+  Own-door sign-in, passkeys and resets still work for any that appear.
+- Admin is **only** the shared account's owner flag (`admin: true`), for
+  `requireAdmin` and for the rollup. A local `isAdmin` or an email match no
+  longer counts.
+- The shared account itself grants the owner flag only while no owner exists
+  (`anyOwner()` in shared/identity.js), and its cookie is always `Secure`
+  outside localhost.
+- Two feature suites reopen the old door with `NODE_ENV=test` +
+  `SPELLBOOK_OWN_REGISTRATION=1`; production sets neither.
+
 ## Commit and PR conventions
 
 **Never put a Claude session link in anything pushed to GitHub.** No

@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+process.env.SPELLBOOK_OWN_REGISTRATION = '1'; // these suites create accounts through the old door
 // Author stats, public author pages, copy milestones and link previews,
 // through the real routes (2026-09-26).
 //

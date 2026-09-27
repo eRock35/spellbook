@@ -67,6 +67,9 @@ const accounts = createAccounts({
   sessionSecret: SESSION_SECRET,
   rpName: 'Spellbook',
   adminEmail: ADMIN_EMAIL,
+  // The old own-door sign-up is closed (see accounts.js). The suites that
+  // drive features through it reopen it, and only under NODE_ENV=test.
+  openRegistration: process.env.NODE_ENV === 'test' && process.env.SPELLBOOK_OWN_REGISTRATION === '1',
 });
 const { requireLogin, requireAdmin } = accounts;
 
@@ -132,9 +135,10 @@ async function bridgeSharedAccount(req, _res, next) {
   req.user = Object.assign({}, own || {}, u, {
     uid,
     displayName: (own && own.displayName) || u.displayName || u.email,
-    // The owner flag can come from either side. Identity's `admin` is the
-    // domain-wide one; a local isAdmin predates it and still stands.
-    isAdmin: u.admin === true || !!(own && own.isAdmin),
+    // Only the shared account's owner flag (2026-09-27). A local isAdmin
+    // could be set by registering an unverified address, so it no longer
+    // counts for a shared session.
+    isAdmin: u.admin === true,
     sharedAccount: true,
   });
   next();
@@ -199,8 +203,8 @@ function requireLoginOrCron(req, res, next) {
 function requireCronOrAdmin(req, res, next) {
   return requireLoginOrCron(req, res, () => {
     if (req.isCron) return next();
-    const email = String((req.user && req.user.email) || '').toLowerCase();
-    if (ADMIN_EMAIL && email === ADMIN_EMAIL.toLowerCase()) return next();
+    // By the owner flag, not by matching an (unverified) email address.
+    if (req.user && req.user.isAdmin === true && req.user.sharedAccount === true) return next();
     return res.status(403).json({ error: 'Only the scheduler runs this.' });
   });
 }

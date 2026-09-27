@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+process.env.SPELLBOOK_OWN_REGISTRATION = '1'; // these suites create accounts through the old door
 // Browsing is open; writing is not.
 //
 // This is the half of the change that could go wrong quietly. Opening the read

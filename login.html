@@ -221,12 +221,21 @@
     var body = registering
       ? { email:u, password:p, displayName: document.getElementById('n').value.trim() }
       : { email:u, password:p };
-    fetch(registering ? '/api/auth/register' : '/api/auth/login', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    }).then(function(r){
-      return r.json().then(function(d){ if (!r.ok) throw new Error(d.error || 'failed'); return d; });
-    }).then(go).catch(function(err){
+    // New accounts are shared accounts: one account for every app here.
+    // Sign-in tries the shared account first, then Spellbook's older own
+    // sign-in for anyone who still has one.
+    function post(path){
+      return fetch(path, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      }).then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(d){ if (!r.ok) throw Object.assign(new Error(d.error || 'failed'), { status: r.status }); return d; });
+      });
+    }
+    var attempt = registering
+      ? post('/api/id/register')
+      : post('/api/id/login').catch(function(e){ if (e.status === 401 || e.status === 404) return post('/api/auth/login'); throw e; });
+    attempt.then(go).catch(function(err){
       pwBtn.disabled = false;
       say((err && err.message) || 'That didn’t work.', true);
     });

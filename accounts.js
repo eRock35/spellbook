@@ -138,6 +138,8 @@ function publicUser(uid, d) {
  */
 function createAccounts(opts) {
   const { db, sessionSecret, rpName, adminEmail } = opts;
+  // Tests may open it to exercise the old door; production never does.
+  const openRegistration = opts.openRegistration === true;
   const users = () => db.collection('users');
   const creds = () => db.collection('webauthn-credentials');
 
@@ -223,6 +225,16 @@ function createAccounts(opts) {
   function mount(app) {
     // --- registration ------------------------------------------------------
     app.post('/api/auth/register', async (req, res) => {
+      // Closed 2026-09-27. Spellbook's own sign-up and the shared account
+      // key accounts by the same uid (base64url of the email) and neither
+      // proves the email, so whoever registered an address on the door its
+      // owner had not used became them - and registering ADMIN_EMAIL here
+      // made you Spellbook's admin. Nobody had an own-door account, so new
+      // accounts are made through the shared account (/api/id/register).
+      // Existing own-door sign-in, passkeys and resets are unchanged.
+      if (!openRegistration) {
+        return res.status(410).json({ error: 'Create your account with the shared sign-in (one account for every app on this site).' });
+      }
       try {
         const email = normalizeEmail(req.body && req.body.email);
         const password = (req.body && req.body.password) || '';
@@ -235,7 +247,9 @@ function createAccounts(opts) {
         }
         const uid = uidFor(email);
         const { salt, hash } = hashPassword(password);
-        const isAdmin = !!adminEmail && email === normalizeEmail(adminEmail);
+        // Admin is never granted by registering an address (it is not
+        // verified); it comes from the shared account's owner flag.
+        const isAdmin = false;
         const now = new Date().toISOString();
         try {
           await users().doc(uid).create({

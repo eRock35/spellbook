@@ -52,6 +52,31 @@ const jar = (r) => (r.headers.getSetCookie() || []).map((c) => c.split(';')[0]).
   r = await post('/api/ai/draft', { description: 'write me a thing that does stuff' });
   ok('...and closed without one', r.status === 401, String(r.status));
 
+  /* ---------- takeovers closed (2026-09-27) ---------- */
+  // Spellbook's own sign-up is closed: registering an address there used to
+  // take over whoever held it on the shared account, and ADMIN_EMAIL made
+  // you admin.
+  r = await post('/api/auth/register', { email: 'shared@example.com', password: 'attacker-password-1' });
+  ok('the old own-door sign-up is closed', r.status === 410, String(r.status));
+  r = await post('/api/auth/register', { email: 'boss@example.com', password: 'attacker-password-1' });
+  ok('...including for the admin address', r.status === 410, String(r.status));
+
+  // The owner registers first, so they hold the owner flag.
+  r = await post('/api/id/register', { email: 'boss@example.com', password: 'the-real-owner-1' });
+  const boss = jar(r);
+  r = await get('/api/admin/users', boss);
+  ok('the owner (shared-account admin) reaches the admin surface', r.status === 200, String(r.status));
+
+  // A local isAdmin left on a Spellbook row no longer makes a shared session admin.
+  const h2 = require('./harness.js');
+  h2.bag('spellbook').set('users/' + Buffer.from('shared@example.com').toString('base64url'), { email: 'shared@example.com', isAdmin: true });
+  r = await get('/api/admin/users', cookie);
+  ok('a local isAdmin flag does not make a shared session admin', r.status === 404, String(r.status));
+  r = await post('/api/cron/rollup', {}, cookie);
+  ok('...nor open the admin-or-cron rollup', r.status === 403 || r.status === 401, String(r.status));
+  r = await post('/api/cron/rollup', {}, boss);
+  ok('the owner can still run it', r.status !== 403 && r.status !== 401, String(r.status));
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
